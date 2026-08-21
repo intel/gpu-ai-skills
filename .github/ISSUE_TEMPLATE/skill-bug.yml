@@ -1,0 +1,60 @@
+name: Skill bug report
+description: A skill gives wrong instructions, a command fails, or a script misbehaves.
+title: "[bug] <skill-name>: <short summary>"
+labels: ["bug"]
+body:
+  - type: input
+    id: skill
+    attributes:
+      label: Skill
+      description: The skill directory name, for example vllm-xpu-run.
+      placeholder: vllm-xpu-run
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What the skill instructed, what you ran, and what went wrong. Paste the exact command and error output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: dropdown
+    id: stack
+    attributes:
+      label: Stack
+      options:
+        - PyTorch + Transformers (torch.xpu)
+        - vLLM XPU
+        - SGLang XPU
+        - Tooling only (no model stack)
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      description: For example Arc A770, Arc Pro B60, Data Center GPU Max 1100.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Driver and runtime details. Output of xpu-smi discovery, the container image and tag if used, and the host OS.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The Hugging Face model id involved, if any.
+      placeholder: Qwen/Qwen2.5-1.5B-Instruct
+    validations:
+      required: false

@@ -1,0 +1,25 @@
+name: Documentation issue
+description: A repository document is wrong, stale, or unclear.
+title: "[docs] <short summary>"
+labels: ["documentation"]
+body:
+  - type: input
+    id: file
+    attributes:
+      label: File
+      description: Which document, for example README.md or HOW_TO_TEST.md.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or unclear
+      description: Quote the passage if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix
+    validations:
+      required: false
