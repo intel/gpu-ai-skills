@@ -72,19 +72,11 @@ This validates:
 
 Expected output: `All checks passed.` Anything else is a bug.
 
-Every check above is stdlib-only, so on the release branch this layer runs on a
-bare interpreter. On `main` the gate additionally runs `guardrails/check.py`,
-which needs PyYAML; without it that step prints `PyYAML is required: pip install
-pyyaml` and the gate exits non-zero. On `main`, install it first:
+Every check above uses only the Python standard library, so this layer runs on
+a bare interpreter. The documentation and script pattern checks shell out to
+`ripgrep` (`rg`), so have it on your PATH.
 
-```sh
-python3 -m pip install pyyaml
-```
-
-It is not made a skip when absent on purpose — a missing package must not
-silently switch a gate off.
-
-One further optional package: `tests/xpu-port.sh` needs `libcst` to exercise its
+One optional package: `tests/xpu-port.sh` needs `libcst` to exercise its
 scanner and rewriter sections. Absent it, that script announces `SKIP: libcst not
 importable` and the rest of the suite still passes. `pip install libcst` if you
 are changing anything under the `xpu-port` skill.
