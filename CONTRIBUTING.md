@@ -124,12 +124,9 @@ Two tools extend the gate's coverage and are worth installing:
 - `libcst` (`pip install libcst`): needed by the `xpu-port` regression
   test. Without it that test prints a `SKIP` notice and is not run.
 
-Install the external validator with Homebrew:
-
-```sh
-brew tap agent-ecosystem/tap
-brew install skill-validator
-```
+The external validator is
+[agent-ecosystem/skill-validator](https://github.com/agent-ecosystem/skill-validator);
+its README covers installation on any platform.
 
 To make the external validator mandatory instead of optional:
 

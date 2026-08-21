@@ -35,8 +35,8 @@ bash tests/static.sh
 # Run repo checker + external skill-validator (if installed)
 bash scripts/check-skills.sh
 
-# External validator (optional, brew-only)
-brew tap agent-ecosystem/tap && brew install skill-validator
+# External validator (optional)
+# install: https://github.com/agent-ecosystem/skill-validator
 ```
 
 The static gate validates:
