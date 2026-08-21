@@ -1,0 +1,11 @@
+{
+  "skills": {
+    "load": {
+      "extraDirs": [
+        "/absolute/path/to/intel-model-skillpack/plugins/intel-model-skillpack/skills"
+      ],
+      "watch": true,
+      "watchDebounceMs": 250
+    }
+  }
+}

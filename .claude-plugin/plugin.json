@@ -1,0 +1,24 @@
+{
+  "name": "intel-model-skillpack",
+  "description": "Agent Skills for running, benchmarking, profiling, and fixing arbitrary Hugging Face safetensors models on Intel GPUs. Container-first, upstream-only, Battlemage / Arc / Arc Pro / Data Center GPU Max.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Rahul Unnikrishnan Nair",
+    "email": "rahul.unnikrishnan.nair@intel.com"
+  },
+  "homepage": "https://github.com/intel/gpu-ai-skills",
+  "repository": "https://github.com/intel/gpu-ai-skills",
+  "license": "Apache-2.0",
+  "keywords": [
+    "intel",
+    "xpu",
+    "battlemage",
+    "arc-pro",
+    "vllm",
+    "sglang",
+    "pytorch",
+    "huggingface",
+    "inference",
+    "llm"
+  ]
+}

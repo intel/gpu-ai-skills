@@ -1,0 +1,18 @@
+[bandit]
+# INI format. Pass it as `bandit --ini .bandit -r <dirs>` (or rely on
+# auto-discovery from the repo root). Two flags will silently defeat this file:
+#
+#   -c  forces the YAML parser, which rejects the `[bandit]` header outright,
+#       so `bandit -c .bandit` loads none of this, scans the excluded trees,
+#       and still reports success.
+#   -x  REPLACES this `exclude` list rather than merging with it, so adding
+#       `-x ./anything` re-enables scanning of tests/ (~600 B101 findings).
+#
+# See .github/workflows/static.yml for the invocation that is actually gated.
+#
+# Test code is excluded per IPAS guidance: B101 (assert_used) is expected and
+# correct in pytest suites, and test fixtures carry throwaway literals that
+# trip the hardcoded-secret and temp-path heuristics.
+# Every suppression in the scanned source is an inline `# nosec <ID>` with its
+# justification at the call site.
+exclude: /tests,/evaluation/tests,/.git,/.fuzzvenv,/.venv,/node_modules,/docs

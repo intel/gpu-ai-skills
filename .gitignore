@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.fuzzvenv/
+.coverage
+.coverage.*
+.env
+.DS_Store
+build/
+dist/
+*.egg-info/
+node_modules/
+.cache/
+
+# Upstream model config.json files fetched by tests/test_fit.py. Third-party
+# files under their own licences -- this project does not redistribute them.
+# `.cache/` above already covers tests/data/.cache/configs/; the old snapshot
+# directory is named explicitly so a stray fetch cannot be re-committed there.
+tests/data/configs/
+work/
+artifacts/
+.out/
+*backups/

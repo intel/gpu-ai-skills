@@ -1,0 +1,6 @@
+{
+  "name": "intel-model-skillpack",
+  "description": "Agent Skills for running, benchmarking, and fitting Hugging Face safetensors models on Intel GPUs.",
+  "version": "0.1.0",
+  "contextFileName": "agents/AGENTS.md"
+}

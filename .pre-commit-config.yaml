@@ -1,0 +1,20 @@
+# Pre-commit hooks for intel-model-skillpack.
+#
+# Install once per clone:
+#     pip install pre-commit && pre-commit install
+#
+# Then `git commit` will automatically regenerate agents/AGENTS.md when
+# a SKILL.md frontmatter changes, and re-stage the regenerated file so it
+# ships with the commit. See CONTRIBUTING.md for details, including the
+# emergency-only `git commit --no-verify` bypass.
+
+repos:
+  - repo: local
+    hooks:
+      - id: regenerate-agents-md
+        name: Regenerate agents/AGENTS.md from SKILL.md frontmatter
+        entry: scripts/pre_commit_regenerate_agents.sh
+        language: script
+        files: ^plugins/intel-model-skillpack/skills/[^/]+/SKILL\.md$
+        pass_filenames: false
+        always_run: true

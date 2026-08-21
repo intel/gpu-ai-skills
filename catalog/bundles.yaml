@@ -1,0 +1,41 @@
+# XPU SkillPack — bundles
+#
+# Each entry below is a named group of skills that ship together.
+# Read this file to see what's in the pack at a glance.
+#
+# To install a specific bundle:
+#   bash scripts/install.sh --bundle <name>
+#
+# With no --bundle, install.sh prompts (or installs every skill with --no-ui).
+
+setup:
+  - xpu-system-setup
+  - xpu-discover
+  - xpu-runtime-preflight
+  - xpu-container-run
+
+run:
+  - xpu-model-type-detect
+  - torch-xpu-run
+  - vllm-xpu-run
+  - sglang-xpu-run
+  - llamacpp-xpu-run
+
+plan:
+  - model-can-it-fit
+  - model-config-recommend
+  - xpu-deploy-plan
+
+bench:
+  - torch-xpu-bench
+  - vllm-xpu-bench
+  - sglang-xpu-bench
+
+profile:
+  - torch-xpu-profile
+  - vllm-xpu-profile
+  - xpu-profile-unitrace
+
+migrate:
+  - cuda-to-xpu-migration
+  - xpu-port
