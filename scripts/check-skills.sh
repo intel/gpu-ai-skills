@@ -17,11 +17,11 @@ bash tests/static.sh
 if ! command -v skill-validator >/dev/null 2>&1; then
     if [ "${REQUIRE_SKILL_VALIDATOR:-0}" = 1 ]; then
         echo "skill-validator is required but is not installed" >&2
-        echo "install: brew tap agent-ecosystem/tap && brew install skill-validator" >&2
+        echo "install: https://github.com/agent-ecosystem/skill-validator" >&2
         exit 1
     fi
     echo "skill-validator not found; skipped external Agent Skills validation"
-    echo "install: brew tap agent-ecosystem/tap && brew install skill-validator"
+    echo "install: https://github.com/agent-ecosystem/skill-validator"
     exit 0
 fi
 

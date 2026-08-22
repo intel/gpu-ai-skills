@@ -1,0 +1,4 @@
+# Default owners for everything in the repository. Reviewers are requested
+# automatically from this list on every pull request. Keep this in sync with
+# the maintainer list in CONTRIBUTING.md.
+* @YuningQiu @258SusanLiu @ctao456 @GopeshKh @unrahul

@@ -1,0 +1,45 @@
+name: New skill proposal
+description: Propose a new skill for the pack.
+title: "[skill] <proposed-skill-name>"
+labels: ["enhancement"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Proposed skill name
+      description: Kebab-case, matching the directory name it would live in.
+      placeholder: xpu-something-new
+    validations:
+      required: true
+  - type: dropdown
+    id: gate
+    attributes:
+      label: Which gate does it belong to
+      options:
+        - Run (get models on the GPU)
+        - Benchmark (measure performance)
+        - Profile (find bottlenecks)
+        - Tooling (estimation, planning, migration)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What the skill does and when an agent should use it
+      description: This becomes the basis for the description frontmatter, so be specific about the trigger conditions.
+    validations:
+      required: true
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Why existing skills do not cover this
+      description: Name the closest existing skill and what it is missing.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: How claims will be verified
+      description: Public sources or an inline verify-locally recipe. Skills must not depend on internal resources.
+    validations:
+      required: false
