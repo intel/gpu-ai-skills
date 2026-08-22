@@ -1,14 +1,12 @@
 # Intel GPU AI Skills
 
-A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for setting up, running, benchmarking, and profiling arbitrary Hugging Face safetensors and GGUF models on Intel GPUs (Arc, Arc Pro, Battlemage, Data Center GPU Max). Covers the PyTorch + Transformers, vLLM-XPU, SGLang-XPU, and llama.cpp-SYCL stacks, plus CUDA → XPU migration.
-
-Complementary to [vllm-project/vllm-skills](https://github.com/vllm-project/vllm-skills) (NVIDIA-focused) and [huggingface/skills](https://github.com/huggingface/skills) (Hub workflows). Neither covers running arbitrary HF safetensors models on local Intel GPUs; this pack does.
+A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for setting up, running, benchmarking, and profiling arbitrary Hugging Face safetensors and GGUF models on Intel GPUs (Arc, Arc Pro, Battlemage, Data Center GPU Max). Covers the PyTorch + Transformers, vLLM-XPU, SGLang-XPU, and llama.cpp-SYCL stacks, plus CUDA to XPU migration.
 
 Format follows the [Agent Skills specification](https://agentskills.io/specification). Ships as the `intel-model-skillpack` plugin.
 
 ## Skills
 
-Three gates — **Run** the model, **Benchmark** it, **Profile** it — bookended by **Setup** (get the host ready), **Plan** (size and configure before you launch), and **Migrate** (bring an existing CUDA project over first). Skills are contextual and auto-loaded based on your conversation; the agent reads each skill's description at startup and loads the matching `SKILL.md` body when a request matches.
+Three stages — **Run** the model, **Benchmark** it, **Profile** it — bookended by **Setup** (get the host ready), **Plan** (size and configure before you launch), and **Migrate** (bring an existing CUDA project over first). Skills are contextual and auto-loaded based on your conversation; the agent reads each skill's description at startup and loads the matching `SKILL.md` body when a request matches.
 
 ### Setup — get the host ready
 
@@ -163,9 +161,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the validation rules.
 bash tests/static.sh
 ```
 
-The checks themselves are stdlib-only. On this development branch the gate also
+The checks themselves are stdlib-only. On this development branch it also
 runs `guardrails/check.py`, which needs PyYAML — without it that one step exits
-`PyYAML is required: pip install pyyaml` and the gate fails:
+`PyYAML is required: pip install pyyaml` and it fails:
 
 ```sh
 python3 -m pip install pyyaml
