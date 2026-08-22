@@ -6,7 +6,6 @@ Format follows the [Agent Skills specification](https://agentskills.io/specifica
 
 ## Skills
 
-Three stages — **Run** the model, **Benchmark** it, **Profile** it — bookended by **Setup** (get the host ready), **Plan** (size and configure before you launch), and **Migrate** (bring an existing CUDA project over first). Skills are contextual and auto-loaded based on your conversation; the agent reads each skill's description at startup and loads the matching `SKILL.md` body when a request matches.
 
 ### Setup — get the host ready
 
