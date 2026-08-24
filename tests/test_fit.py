@@ -8,7 +8,7 @@ Comprehensive pytest test suite for fit.py
 Tests all known bugs and verifies against HuggingFace KV cache calculator.
 
 Run from repository root:
-    cd intel-models-skillpack
+    cd gpu-ai-skills
     python3 -m pytest tests/test_fit.py -v
 
 Options:
@@ -63,7 +63,7 @@ def find_git_root():
     repo_candidates = [test_dir.parent, test_dir]
 
     for candidate in repo_candidates:
-        fit_path = candidate / 'plugins/intel-model-skillpack/skills/model-can-it-fit/scripts'
+        fit_path = candidate / 'plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts'
         if fit_path.exists():
             return candidate
 
@@ -71,7 +71,7 @@ def find_git_root():
 
 # Add fit.py directory to path
 git_root = find_git_root()
-fit_py_dir = git_root / 'plugins/intel-model-skillpack/skills/model-can-it-fit/scripts'
+fit_py_dir = git_root / 'plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts'
 sys.path.insert(0, str(fit_py_dir))
 
 # The pinned-revision map and cache layout are shared with the pre-fetch helper

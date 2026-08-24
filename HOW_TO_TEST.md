@@ -14,7 +14,7 @@ bash scripts/install.sh --all
 That copies every skill directory into the known personal skills
 locations and leaves unrelated skills alone. Existing skill dirs
 with the same names are moved into
-`~/.cache/intel-model-skillpack/install-backups/`.
+`~/.cache/intel-gpu-ai-skills/install-backups/`.
 
 Manual install paths, if you want to test one agent at a time:
 
@@ -109,7 +109,7 @@ bash scripts/install.sh --uninstall
 ```
 
 What to check: every skill directory under
-`plugins/intel-model-skillpack/skills/` should appear under each
+`plugins/intel-gpu-ai-skills/skills/` should appear under each
 agent's skills path during install, and disappear cleanly during
 uninstall. Any other skills you had previously installed (HF
 skills, vllm-skills, your own) should be untouched on both
@@ -139,15 +139,15 @@ plausible numbers and refuses cleanly on diffusion:
 
 ```sh
 # Decoder-only LLM
-python3 plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model Qwen/Qwen2.5-1.5B-Instruct --quant bf16 --device-vram-gb 32
 
 # VLM (architecture detected, vision tower folded into weights)
-python3 plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model Qwen/Qwen2.5-VL-7B-Instruct --quant bf16 --device-vram-gb 32
 
 # Diffusion (refused cleanly with component list)
-python3 plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model stabilityai/stable-diffusion-xl-base-1.0 --device-vram-gb 32
 ```
 
@@ -219,7 +219,7 @@ when the model fits per GPU, and emit the current vLLM-XPU launch
 shape.
 
 ```sh
-python3 plugins/intel-model-skillpack/skills/model-config-recommend/scripts/recommend.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-config-recommend/scripts/recommend.py \
     --model Qwen/Qwen2.5-1.5B-Instruct \
     --device arc-pro-b70 --num-devices 2 \
     --runtime vllm-xpu --ctx 4096 --concurrency 4 \
@@ -248,7 +248,7 @@ Host guard path (no real XPU required; uses test override):
 
 ```sh
 INTEL_SKILLPACK_FAKE_XPU_COUNT=1 \
-python3 plugins/intel-model-skillpack/skills/model-config-recommend/scripts/recommend.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-config-recommend/scripts/recommend.py \
     --model Qwen/Qwen2.5-1.5B-Instruct \
     --device arc-pro-b70 --num-devices 4 \
     --discover-host --no-hub-search

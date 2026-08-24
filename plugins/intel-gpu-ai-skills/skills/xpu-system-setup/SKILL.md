@@ -50,7 +50,7 @@ installed but the driver not loadable, or render group not effective).
 If only one component is missing, use `--only`:
 
 ```sh
-plugins/intel-model-skillpack/skills/xpu-system-setup/scripts/setup_xpu_system.sh --only xpu-smi --auto
+plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --only xpu-smi --auto
 ```
 
 This still runs the full verification gate at the end.
@@ -76,22 +76,22 @@ Based on the official Intel GPU driver installation guide
 
 ```sh
 # Interactive mode (default) — prompts before each installation
-plugins/intel-model-skillpack/skills/xpu-system-setup/scripts/setup_xpu_system.sh
+plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh
 
 # Auto mode — install all without prompts (requires sudo)
-plugins/intel-model-skillpack/skills/xpu-system-setup/scripts/setup_xpu_system.sh --auto
+plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --auto
 
 # Dry-run — show what would be done without changing anything
-plugins/intel-model-skillpack/skills/xpu-system-setup/scripts/setup_xpu_system.sh --dry-run
+plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --dry-run
 
 # Setup specific components only
-plugins/intel-model-skillpack/skills/xpu-system-setup/scripts/setup_xpu_system.sh --only xpu-smi,groups
+plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --only xpu-smi,groups
 
 # Skip Docker install (e.g., if using podman)
-plugins/intel-model-skillpack/skills/xpu-system-setup/scripts/setup_xpu_system.sh --skip docker
+plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --skip docker
 
 # Skip media packages (compute-only server)
-plugins/intel-model-skillpack/skills/xpu-system-setup/scripts/setup_xpu_system.sh --skip media
+plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --skip media
 ```
 
 **Interactive vs Auto Mode:**

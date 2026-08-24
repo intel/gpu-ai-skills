@@ -35,7 +35,7 @@ fi
 VERBOSE=0
 [ "${1:-}" = "-v" ] && VERBOSE=1
 
-SKILL="plugins/intel-model-skillpack/skills"
+SKILL="plugins/intel-gpu-ai-skills/skills"
 LAUNCH="$SKILL/vllm-xpu-run/scripts/emit_launch.sh"
 
 pass=0

@@ -1,4 +1,4 @@
-# Bill of Materials — intel-model-skillpack
+# Bill of Materials — intel-gpu-ai-skills
 
 **Version:** 0.1.0  
 **Release artifact:** branch `pre-release-v0.1`  

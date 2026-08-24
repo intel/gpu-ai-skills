@@ -25,6 +25,6 @@ if ! command -v skill-validator >/dev/null 2>&1; then
     exit 0
 fi
 
-for d in plugins/intel-model-skillpack/skills/*/; do
+for d in plugins/intel-gpu-ai-skills/skills/*/; do
     skill-validator check --strict --skip links --skip-orphans --allow-dirs=data "$d"
 done

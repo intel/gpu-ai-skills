@@ -26,7 +26,7 @@ Do not duplicate routing guidance in this skill body.
 ## Quick start
 
 ```sh
-plugins/intel-model-skillpack/skills/xpu-runtime-preflight/scripts/check_runtime_preflight.sh \
+plugins/intel-gpu-ai-skills/skills/xpu-runtime-preflight/scripts/check_runtime_preflight.sh \
     --target-gpu 0 \
     --out-dir .out/skills/xpu-runtime-preflight
 ```
@@ -34,7 +34,7 @@ plugins/intel-model-skillpack/skills/xpu-runtime-preflight/scripts/check_runtime
 Add an already-local image when the next skill path runs in a container:
 
 ```sh
-plugins/intel-model-skillpack/skills/xpu-runtime-preflight/scripts/check_runtime_preflight.sh \
+plugins/intel-gpu-ai-skills/skills/xpu-runtime-preflight/scripts/check_runtime_preflight.sh \
     --target-gpu 0 \
     --image <already-local-image>
 ```
@@ -43,7 +43,7 @@ When downloads or image builds are part of the next step, add a network
 check:
 
 ```sh
-plugins/intel-model-skillpack/skills/xpu-runtime-preflight/scripts/check_runtime_preflight.sh \
+plugins/intel-gpu-ai-skills/skills/xpu-runtime-preflight/scripts/check_runtime_preflight.sh \
     --env-file .env \
     --target-gpu 0 \
     --network-check

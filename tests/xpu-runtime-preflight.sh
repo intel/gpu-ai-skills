@@ -8,7 +8,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-script="plugins/intel-model-skillpack/skills/xpu-runtime-preflight/scripts/check_runtime_preflight.sh"
+script="plugins/intel-gpu-ai-skills/skills/xpu-runtime-preflight/scripts/check_runtime_preflight.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 

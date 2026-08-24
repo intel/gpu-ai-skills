@@ -33,7 +33,7 @@ from common import docker_image_id
 
 HERE = Path(__file__).resolve().parent.parent
 HW = json.loads((HERE / "data" / "hardware.json").read_text())
-CACHE = Path.home() / ".cache" / "intel-model-skillpack" / "calibration"
+CACHE = Path.home() / ".cache" / "intel-gpu-ai-skills" / "calibration"
 
 
 def image_digest(image: str) -> str:
@@ -68,7 +68,7 @@ def run_reference_bench(image: str, model_id: str, port: int = 8765,
     print(f"  starting {container} (image {image}, model {model_id})")
     cmd = [
         "docker", "run", "--rm", "-d", "--name", container,
-        "--label", "intel-model-skillpack.owner=calibrate",
+        "--label", "intel-gpu-ai-skills.owner=calibrate",
         "--device", "/dev/dri",
         "--ipc=host",
         "-e", "ZE_AFFINITY_MASK=0",

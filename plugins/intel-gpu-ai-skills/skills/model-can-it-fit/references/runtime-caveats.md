@@ -9,7 +9,7 @@ instead of a fit estimate.
 Regenerate this table for the current script and model set:
 
 ```sh
-python3 plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --table --runtime vllm --device-vram-gb 32
 ```
 

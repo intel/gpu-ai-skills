@@ -50,7 +50,7 @@ directly.
 ## Quick start
 
 ```sh
-plugins/intel-model-skillpack/skills/xpu-deploy-plan/scripts/build_plan.sh \
+plugins/intel-gpu-ai-skills/skills/xpu-deploy-plan/scripts/build_plan.sh \
     --model Qwen/Qwen2.5-7B-Instruct \
     --runtime vllm \
     --target-gpu 0 \

@@ -119,7 +119,7 @@ inputs_json="$out_dir/inputs.json"
 
 # Resolve skills_root. Sibling skills always live next to this skill dir at
 # .../skills/<name>/scripts/, in both the in-repo layout
-# (<repo>/plugins/intel-model-skillpack/skills/) and the installed layout
+# (<repo>/plugins/intel-gpu-ai-skills/skills/) and the installed layout
 # (~/.claude/skills/), because scripts/install.sh uses `cp -r` and preserves
 # the directory shape. Override with $SKILLS_ROOT for tests.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -255,21 +255,21 @@ case "$runtime" in
                 --port "$port" \
                 --container-name "$container_name") || emit_rc=$?
             if [ "$emit_rc" -ne 0 ]; then
-                launch_cmd="vllm-xpu-run launch emitter at $emit_launch_script exited $emit_rc. Read plugins/intel-model-skillpack/skills/vllm-xpu-run/SKILL.md and run it manually."
+                launch_cmd="vllm-xpu-run launch emitter at $emit_launch_script exited $emit_rc. Read plugins/intel-gpu-ai-skills/skills/vllm-xpu-run/SKILL.md and run it manually."
             fi
         else
-            launch_cmd="vllm-xpu-run launch emitter not found at $emit_launch_script. Read plugins/intel-model-skillpack/skills/vllm-xpu-run/SKILL.md."
+            launch_cmd="vllm-xpu-run launch emitter not found at $emit_launch_script. Read plugins/intel-gpu-ai-skills/skills/vllm-xpu-run/SKILL.md."
         fi
         runtime_skill="vllm-xpu-run"
         bench_skill="vllm-xpu-bench"
         ;;
     sglang)
-        launch_cmd="See plugins/intel-model-skillpack/skills/sglang-xpu-run/SKILL.md for the exact docker run command for $model on XPU $target_gpu."
+        launch_cmd="See plugins/intel-gpu-ai-skills/skills/sglang-xpu-run/SKILL.md for the exact docker run command for $model on XPU $target_gpu."
         runtime_skill="sglang-xpu-run"
         bench_skill="sglang-xpu-bench"
         ;;
     torch)
-        launch_cmd="See plugins/intel-model-skillpack/skills/torch-xpu-run/SKILL.md for the pure-PyTorch path for $model on XPU $target_gpu."
+        launch_cmd="See plugins/intel-gpu-ai-skills/skills/torch-xpu-run/SKILL.md for the pure-PyTorch path for $model on XPU $target_gpu."
         runtime_skill="torch-xpu-run"
         bench_skill="torch-xpu-bench"
         ;;

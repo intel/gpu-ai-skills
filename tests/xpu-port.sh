@@ -17,7 +17,7 @@ VERBOSE=0
 [ "${1:-}" = "-v" ] && VERBOSE=1
 
 PY="${PYTHON:-python3}"
-SKILL="plugins/intel-model-skillpack/skills/xpu-port/scripts"
+SKILL="plugins/intel-gpu-ai-skills/skills/xpu-port/scripts"
 
 if ! "$PY" -c 'import libcst' 2>/dev/null; then
     echo "SKIP: libcst not importable from $PY (install with: pip install libcst)" >&2

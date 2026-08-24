@@ -3,6 +3,7 @@
 A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for setting up, running, benchmarking, and profiling arbitrary Hugging Face safetensors and GGUF models on Intel GPUs (Arc, Arc Pro, Battlemage, Data Center GPU Max). Covers the PyTorch + Transformers, vLLM-XPU, SGLang-XPU, and llama.cpp-SYCL stacks, plus CUDA to XPU migration.
 
 Format follows the [Agent Skills specification](https://agentskills.io/specification).
+
 ## Skills
 
 
@@ -67,8 +68,8 @@ Gemini CLI, Qwen Code, Kimi Code, Hermes Agent, and OpenClaw.
 ### Local clone, all agents at once (recommended)
 
 ```sh
-git clone https://github.com/intel/gpu-ai-skills.git intel-model-skillpack
-cd intel-model-skillpack
+git clone https://github.com/intel/gpu-ai-skills.git intel-gpu-ai-skills
+cd intel-gpu-ai-skills
 bash scripts/install.sh
 ```
 
@@ -78,7 +79,7 @@ Installs into every agent skills directory it detects. Pass `--all` to also crea
 
 ```text
 /plugin marketplace add intel/gpu-ai-skills
-/plugin install <skill-name>@intel-model-skillpack
+/plugin install <skill-name>@intel-gpu-ai-skills
 ```
 
 ### Gemini CLI
@@ -109,7 +110,7 @@ For any other agent, clone this repo and copy the skill folders into the agent's
 | Generic / `AGENTS.md` | `<repo>/.agents/skills/` or `~/.config/agents/skills/` | uses [`agents/AGENTS.md`](agents/AGENTS.md) |
 
 ```sh
-cp -r plugins/intel-model-skillpack/skills/* <skill-directory>/
+cp -r plugins/intel-gpu-ai-skills/skills/* <skill-directory>/
 ```
 
 opencode also auto-loads from `~/.claude/skills/` and `~/.agents/skills/`, so any of those paths works. GitHub Copilot CLI also accepts `gh skill install intel/gpu-ai-skills --agent github-copilot --scope user` (gh ≥ v2.90).
@@ -117,7 +118,7 @@ opencode also auto-loads from `~/.claude/skills/` and `~/.agents/skills/`, so an
 ## Layout
 
 ```
-plugins/intel-model-skillpack/skills/   # one directory per skill
+plugins/intel-gpu-ai-skills/skills/   # one directory per skill
 scripts/               # repo tooling (install, publish, generate AGENTS.md)
 agents/                # generated AGENTS.md fallback bundle
 .claude-plugin/        # Claude Code plugin marketplace manifests
@@ -133,17 +134,17 @@ On Ubuntu 24.04 with the stock kernel, Battlemage GPUs require three
 prerequisites before the skills work. Run the diagnostic first:
 
 ```sh
-bash plugins/intel-model-skillpack/skills/xpu-system-setup/scripts/check_battlemage_prerequisites.sh
+bash plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/check_battlemage_prerequisites.sh
 ```
 
 It checks for `nomodeset` in GRUB, the OEM kernel 6.17 requirement, and
 compute runtime >=26.18. Pass `--fix` to apply remediations, or follow
-the steps in `plugins/intel-model-skillpack/skills/xpu-system-setup/SKILL.md`
+the steps in `plugins/intel-gpu-ai-skills/skills/xpu-system-setup/SKILL.md`
 → **Battlemage Prerequisites**.
 
 ## Contributing
 
-New skills go under `plugins/intel-model-skillpack/skills/<skill-name>/` with a `SKILL.md`. Start from [`template/SKILL.md`](template/SKILL.md).
+New skills go under `plugins/intel-gpu-ai-skills/skills/<skill-name>/` with a `SKILL.md`. Start from [`template/SKILL.md`](template/SKILL.md).
 
 Before committing any skill change:
 
