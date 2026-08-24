@@ -1,8 +1,3 @@
----
-name: intel-gpu-ai-skills-agent
-description: Router agent exposing Intel GPU AI skill packs for running, benchmarking, and profiling Hugging Face models, and migrating workloads from CUDA on Intel GPUs.
----
-
 <skills>
 
 You have additional SKILLs documented in directories containing a "SKILL.md" file.
