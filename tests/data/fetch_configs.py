@@ -44,7 +44,7 @@ def fetch_one(model_id, revision, token):
     # https:// literal above. Neither scheme nor host is reachable from any
     # parameter -- model_id and revision only ever extend the path.
     url = f"{HF_BASE}/{model_id}/raw/{revision}/config.json"
-    headers = {"User-Agent": "intel-models-skillpack-tests/0.1"}
+    headers = {"User-Agent": "intel-gpu-ai-skills-tests/0.1"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, headers=headers)

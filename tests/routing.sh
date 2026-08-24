@@ -16,8 +16,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-XPU_PORT="plugins/intel-model-skillpack/skills/xpu-port/SKILL.md"
-MIGRATION="plugins/intel-model-skillpack/skills/cuda-to-xpu-migration/SKILL.md"
+XPU_PORT="plugins/intel-gpu-ai-skills/skills/xpu-port/SKILL.md"
+MIGRATION="plugins/intel-gpu-ai-skills/skills/cuda-to-xpu-migration/SKILL.md"
 
 pass=0
 fail=0

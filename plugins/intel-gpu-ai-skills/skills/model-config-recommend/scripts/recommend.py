@@ -729,7 +729,7 @@ def main(argv: list[str] | None = None) -> int:
     # with the measured values so render() shows tightened bands.
     if args.use_calibration:
         from pathlib import Path as _P
-        cache = _P.home() / ".cache" / "intel-model-skillpack" / "calibration"
+        cache = _P.home() / ".cache" / "intel-gpu-ai-skills" / "calibration"
         digest_part = args.use_calibration.replace(":", "_").replace("/", "_")[:64]
         # We accept either a literal image string (we'll glob-match) or a path.
         # A cache entry is a file on disk that anything could have touched since

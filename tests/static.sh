@@ -82,7 +82,7 @@ done
 # 2. SKILL.md frontmatter is valid (name + description present, name
 #    matches directory).
 printf '\n== SKILL.md frontmatter ==\n'
-for d in plugins/intel-model-skillpack/skills/*/; do
+for d in plugins/intel-gpu-ai-skills/skills/*/; do
     name=$(basename "$d")
     sk="$d/SKILL.md"
     if [ ! -f "$sk" ]; then
@@ -119,7 +119,7 @@ while IFS= read -r f; do
     else
         err "$f does not parse"
     fi
-done < <(find scripts tests plugins/intel-model-skillpack/skills -name '*.sh' 2>/dev/null)
+done < <(find scripts tests plugins/intel-gpu-ai-skills/skills -name '*.sh' 2>/dev/null)
 
 # 4a. Mocked integration checks.
 printf '\n== Mocked integration checks ==\n'
@@ -225,8 +225,8 @@ printf '\n== catalog/bundles.yaml covers every skill ==\n'
 if [ -f catalog/bundles.yaml ]; then
     missing=$(python3 -c "
 import os, re, sys
-disk = sorted(d for d in os.listdir('plugins/intel-model-skillpack/skills')
-              if os.path.isdir('plugins/intel-model-skillpack/skills/' + d))
+disk = sorted(d for d in os.listdir('plugins/intel-gpu-ai-skills/skills')
+              if os.path.isdir('plugins/intel-gpu-ai-skills/skills/' + d))
 refs = set(re.findall(r'^\s*-\s+([a-z][a-z0-9-]*)\s*\$',
                       open('catalog/bundles.yaml').read(), re.M))
 print(','.join(s for s in disk if s not in refs))
@@ -243,7 +243,7 @@ fi
 # 6. marketplace.json plugin count matches skills/ directory count.
 printf '\n== marketplace.json covers every skill ==\n'
 mk_count=$(python3 -c "import json; print(len(json.load(open('.claude-plugin/marketplace.json'))['plugins']))")
-sk_count=$(find plugins/intel-model-skillpack/skills -mindepth 1 -maxdepth 1 -type d | awk 'END{print NR}')
+sk_count=$(find plugins/intel-gpu-ai-skills/skills -mindepth 1 -maxdepth 1 -type d | awk 'END{print NR}')
 if [ "$mk_count" = "$sk_count" ]; then
     ok "$mk_count plugins in marketplace.json, $sk_count skill dirs"
 else
@@ -252,7 +252,7 @@ fi
 
 # 7. Published docs should not point at internal scratchpads.
 printf '\n== Published docs are self-contained ==\n'
-if rg -n 'research/|SCRATCH\.md' README.md HOW_TO_TEST.md agents plugins/intel-model-skillpack/skills >"$scratch/docs" 2>/dev/null; then
+if rg -n 'research/|SCRATCH\.md' README.md HOW_TO_TEST.md agents plugins/intel-gpu-ai-skills/skills >"$scratch/docs" 2>/dev/null; then
     err "published docs reference internal research paths"
     sed 's/^/  /' "$scratch/docs"
 else
@@ -261,7 +261,7 @@ fi
 
 # 8. No destructive process/container cleanup in shipped scripts.
 printf '\n== No destructive cleanup patterns ==\n'
-if rg -n 'pkill|docker rm -f|rm -rf' scripts plugins/intel-model-skillpack/skills >"$scratch/destructive" 2>/dev/null; then
+if rg -n 'pkill|docker rm -f|rm -rf' scripts plugins/intel-gpu-ai-skills/skills >"$scratch/destructive" 2>/dev/null; then
     err "destructive cleanup pattern found"
     sed 's/^/  /' "$scratch/destructive"
 else
@@ -270,7 +270,7 @@ fi
 
 # 9. No documented commands that advertise unimplemented TODO behavior.
 printf '\n== No TODO command promises ==\n'
-if rg -n '`[^`]*(--table|--mode|--verify|--calibrate)[^`]*`.*TODO|TODO: implement' README.md HOW_TO_TEST.md plugins/intel-model-skillpack/skills >"$scratch/todo" 2>/dev/null; then
+if rg -n '`[^`]*(--table|--mode|--verify|--calibrate)[^`]*`.*TODO|TODO: implement' README.md HOW_TO_TEST.md plugins/intel-gpu-ai-skills/skills >"$scratch/todo" 2>/dev/null; then
     err "docs advertise unimplemented command behavior"
     sed 's/^/  /' "$scratch/todo"
 else

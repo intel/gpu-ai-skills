@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SKILLS_DIR = REPO / "plugins" / "intel-model-skillpack" / "skills"
+SKILLS_DIR = REPO / "plugins" / "intel-gpu-ai-skills" / "skills"
 OUT = REPO / "agents" / "AGENTS.md"
 
 

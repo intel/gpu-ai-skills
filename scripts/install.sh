@@ -26,7 +26,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-SRC="plugins/intel-model-skillpack/skills"
+SRC="plugins/intel-gpu-ai-skills/skills"
 
 agents=(claude codex opencode copilot qwen kimi hermes openclaw gemini cursor)
 declare -A path
@@ -69,8 +69,8 @@ backup_count=0
 
 ensure_backup_root() {
     if [ -n "$backup_root" ]; then return; fi
-    mkdir -p "$HOME/.cache/intel-model-skillpack/install-backups"
-    backup_root=$(mktemp -d "$HOME/.cache/intel-model-skillpack/install-backups/install.XXXXXX")
+    mkdir -p "$HOME/.cache/intel-gpu-ai-skills/install-backups"
+    backup_root=$(mktemp -d "$HOME/.cache/intel-gpu-ai-skills/install-backups/install.XXXXXX")
 }
 
 backup_existing() {
@@ -118,7 +118,7 @@ uninstall_dir() {
 }
 
 if [ "$do_uninstall" = 1 ]; then
-    echo "Uninstalling intel-model-skillpack:"
+    echo "Uninstalling intel-gpu-ai-skills:"
     for a in "${agents[@]}"; do uninstall_dir "$a" "${path[$a]}"; done
     print_backup_note
     exit 0
@@ -132,7 +132,7 @@ if [ -n "$only" ]; then
             print_backup_note
             ;;
         claude|codex|opencode|copilot|qwen|kimi|hermes|openclaw|cursor)
-            echo "Installing intel-model-skillpack for $only:"
+            echo "Installing intel-gpu-ai-skills for $only:"
             install_dir "$only" "${path[$only]}"
             print_backup_note
             ;;
@@ -145,7 +145,7 @@ if [ -n "$only" ]; then
     exit 0
 fi
 
-echo "Installing intel-model-skillpack into every detected agent:"
+echo "Installing intel-gpu-ai-skills into every detected agent:"
 for a in claude codex opencode copilot qwen kimi hermes openclaw cursor; do
     install_dir "$a" "${path[$a]}"
 done

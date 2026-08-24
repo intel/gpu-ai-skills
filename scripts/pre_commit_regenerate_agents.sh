@@ -5,7 +5,7 @@
 # Regenerate agents/AGENTS.md from SKILL.md frontmatter and re-stage it.
 #
 # Invoked by .pre-commit-config.yaml when a staged file matches
-# plugins/intel-model-skillpack/skills/*/SKILL.md. Safe to run manually
+# plugins/intel-gpu-ai-skills/skills/*/SKILL.md. Safe to run manually
 # from the repo root as well.
 
 set -euo pipefail

@@ -87,7 +87,7 @@ largest degree.
 From the skillpack repo root:
 
 ```sh
-python3 plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model Qwen/Qwen2.5-7B-Instruct \
     --quant bf16 --ctx 8192 --concurrency 4 \
     --runtime vllm --device-vram-gb 24 \
@@ -107,7 +107,7 @@ python3 scripts/fit.py \
 For a local config:
 
 ```sh
-python3 plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model /path/to/model/config.json \
     --quant bf16 --ctx 8192 --concurrency 4 \
     --runtime vllm --device-vram-gb 24
@@ -116,7 +116,7 @@ python3 plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py \
 For a quick common-model table:
 
 ```sh
-python3 plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --table --runtime vllm --device-vram-gb 32
 ```
 

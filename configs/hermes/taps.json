@@ -2,7 +2,7 @@
   "taps": [
     {
       "repo": "intel/gpu-ai-skills",
-      "path": "plugins/intel-model-skillpack/skills/"
+      "path": "plugins/intel-gpu-ai-skills/skills/"
     }
   ]
 }

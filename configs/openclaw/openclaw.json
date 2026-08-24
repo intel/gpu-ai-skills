@@ -2,7 +2,7 @@
   "skills": {
     "load": {
       "extraDirs": [
-        "/absolute/path/to/intel-model-skillpack/plugins/intel-model-skillpack/skills"
+        "/absolute/path/to/gpu-ai-skills/plugins/intel-gpu-ai-skills/skills"
       ],
       "watch": true,
       "watchDebounceMs": 250

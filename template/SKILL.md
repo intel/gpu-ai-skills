@@ -3,7 +3,7 @@ name: template-skill
 description: Replace this with a one-paragraph description of what the skill does and when an agent should use it. Include keywords likely to appear in user prompts.
 metadata:
   # Contributor scaffold, not a shippable skill. Keeps `npx skills add
-  # intel/intel-models-skillpack` from offering this template as installable.
+  # intel/gpu-ai-skills` from offering this template as installable.
   # Delete this metadata block when you copy the file into a real skill.
   internal: true
 ---

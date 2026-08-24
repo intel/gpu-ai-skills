@@ -123,7 +123,7 @@ def launch(image: str, model_id: str, quant: str, kv_dtype: str, ctx: int,
         env.append(("HF_TOKEN", os.environ["HF_TOKEN"]))
 
     cmd = ["docker", "run", "--rm", "-d", "--name", container,
-           "--label", "intel-model-skillpack.owner=verify",
+           "--label", "intel-gpu-ai-skills.owner=verify",
            "--device", "/dev/dri", "--ipc=host"]
     for k, v in env:
         cmd += ["-e", f"{k}={v}"]

@@ -1,4 +1,4 @@
-# Pre-commit hooks for intel-model-skillpack.
+# Pre-commit hooks for intel-gpu-ai-skills.
 #
 # Install once per clone:
 #     pip install pre-commit && pre-commit install
@@ -15,6 +15,6 @@ repos:
         name: Regenerate agents/AGENTS.md from SKILL.md frontmatter
         entry: scripts/pre_commit_regenerate_agents.sh
         language: script
-        files: ^plugins/intel-model-skillpack/skills/[^/]+/SKILL\.md$
+        files: ^plugins/intel-gpu-ai-skills/skills/[^/]+/SKILL\.md$
         pass_filenames: false
         always_run: true

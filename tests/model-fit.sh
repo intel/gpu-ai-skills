@@ -25,7 +25,7 @@ cat >"$cfg" <<'JSON'
 }
 JSON
 
-fit_py="plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py"
+fit_py="plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py"
 
 out="$tmpdir/fit.txt"
 python3 "$fit_py" \
@@ -55,7 +55,7 @@ fi
 grep -q "Usable VRAM:" "$oom"
 grep -q "Verdict:           DOES NOT FIT" "$oom"
 
-rec_py="plugins/intel-model-skillpack/skills/model-config-recommend/scripts/recommend.py"
+rec_py="plugins/intel-gpu-ai-skills/skills/model-config-recommend/scripts/recommend.py"
 rec="$tmpdir/recommend.txt"
 python3 "$rec_py" \
     --model "$cfg" \

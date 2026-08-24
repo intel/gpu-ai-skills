@@ -11,7 +11,7 @@ The skills follow the Agent Skills standard and work with any compliant agent (C
 ## Repository structure
 
 ```
-plugins/intel-model-skillpack/skills/   # One directory per skill
+plugins/intel-gpu-ai-skills/skills/   # One directory per skill
   <skill-name>/
     SKILL.md                            # Skill definition (required)
     scripts/                            # Helper scripts referenced by SKILL.md
@@ -55,7 +55,7 @@ The static gate validates:
 bash tests/static.sh
 
 # Layer 3: Test VRAM calculator
-python3 plugins/intel-model-skillpack/skills/model-can-it-fit/scripts/fit.py \
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model Qwen/Qwen2.5-1.5B-Instruct --quant bf16 --device-vram-gb 32
 
 # See HOW_TO_TEST.md for deeper acceptance testing layers
@@ -154,7 +154,7 @@ Helper scripts under `skills/<name>/scripts/`:
 ## Key files not to edit manually
 
 - `agents/AGENTS.md` — generated from skill frontmatter, regenerate via `scripts/generate_agents.py`
-- `.claude-plugin/marketplace.json` — must list every skill under `plugins/intel-model-skillpack/skills/`
+- `.claude-plugin/marketplace.json` — must list every skill under `plugins/intel-gpu-ai-skills/skills/`
 
 ## Relationship to other skill packs
 
