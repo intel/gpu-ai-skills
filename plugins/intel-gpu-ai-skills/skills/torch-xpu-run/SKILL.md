@@ -70,8 +70,7 @@ also logs `XPU device count is zero!`).
 
 Three options:
 
-1. **Reuse a serving image** — `intel/vllm:*-xpu` ships a working
-   torch-xpu inside; start with `--entrypoint /bin/bash`.
+1. **Local venv** — same install command, no container.
 2. **Build a thin Dockerfile** on `ubuntu:24.04` or
    `python:3.12-slim` and run the XPU-index install above. Canonical
    docs are the PyTorch XPU notes:
@@ -79,7 +78,8 @@ Three options:
    (the <https://pytorch.org/get-started/locally/> selector emits the
    same command once you pick Linux + Pip + Python + Intel GPU, but it
    is JS-rendered and shows nothing XPU-related when fetched as text).
-3. **Local venv** — same install command, no container.
+3. **Reuse a serving image** — `intel/vllm:*-xpu` ships a working
+   torch-xpu inside; start with `--entrypoint /bin/bash`.
 
 Launch with the GPU visible (see **xpu-container-run** for full
 flags):
@@ -97,30 +97,26 @@ docker run --rm -it \
 
 ## Quickstart
 
-**First, probe what is already here.** These imports are read-only —
-they install nothing and download nothing — so run them *before* asking
-the user anything. Nothing may be missing, in which case there is
-nothing to confirm:
+**STOP — confirm before proceeding.** Before installing packages or
+downloading weights, ask the user to confirm:
+1. The model ID (and dtype if not bf16)
+2. That installing packages (torch from the XPU index plus
+   `transformers` / `accelerate`) and downloading multi-GB weights is
+   acceptable
+
+Do not run `pip install`, `uv pip install`, or model download commands
+until the user explicitly confirms. This is a hard requirement.
+
+**Check before installing.** Always verify packages are already present
+before running `pip install`:
 
 ```sh
-python3 -c "import torch; print(torch.__version__, torch.xpu.is_available(), torch.xpu.device_count())" 2>&1 && \
+python3 -c "import torch; print(torch.__version__, torch.xpu.is_available())" 2>&1 && \
 python3 -c "import transformers; print(transformers.__version__)" 2>&1 && \
 python3 -c "import accelerate; print(accelerate.__version__)" 2>&1
 ```
 
-**Then STOP — confirm before proceeding.** If the probe shows something
-is missing, or the weights are not in the local cache, ask the user to
-confirm before installing packages or downloading weights:
-1. The model ID (and dtype if not bf16)
-2. That installing the specific packages the probe reported missing
-   (torch from the XPU index, `transformers>=4.56`, `accelerate`) and
-   downloading multi-GB weights is acceptable
-
-Do not run `pip install`, `uv pip install`, or model download commands
-until the user explicitly confirms. This is a hard requirement — the
-read-only probe above is the only thing that precedes it.
-
-Only install what the probe reports missing:
+Only install what the import check reports missing:
 
 ```sh
 pip install --quiet --break-system-packages 'transformers>=4.56' accelerate
