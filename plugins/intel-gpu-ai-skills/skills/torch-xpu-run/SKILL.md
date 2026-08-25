@@ -28,18 +28,54 @@ PyTorch supersedes them.
 
 ## Where to get PyTorch with XPU
 
-Stock upstream PyTorch ships XPU support — no extra index needed.
-Verify: `python3 -c 'import torch; print(torch.__version__)'` — the
-version ends in `+xpu` when XPU support is present.
+XPU wheels are **not** on the default PyPI index. A plain
+`pip install torch` gets the CUDA/CPU build, where `torch.xpu` exists
+as a namespace but reports no devices. Install from the XPU index:
+
+```sh
+# stable
+pip3 install torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/xpu
+
+# nightly — only when you need an unreleased fix
+pip3 install --pre torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/nightly/xpu
+```
+
+Pinning works the same way, e.g. `pip install torch==2.11.0
+torchvision==0.26.0 torchaudio==2.11.0 --index-url
+https://download.pytorch.org/whl/xpu`. Take the three versions from one
+release row — mixing rows breaks the ABI.
+
+The Intel GPU driver must already be installed on the host
+(`xpu-discover` / `xpu-runtime-preflight` verify this). Binary wheels do
+**not** need Intel Deep Learning Essentials; only source builds do.
+
+Verify:
+
+```sh
+python3 -c "import torch; print(torch.__version__, torch.xpu.is_available(), torch.xpu.device_count())"
+```
+
+`torch.xpu.is_available() is True` is the authoritative signal. Linux
+wheels from the XPU index also carry a `+xpu` local version suffix
+(`2.8.0+xpu`), but source-built images — including some vendor serving
+images — drop it, so a missing suffix is not proof XPU is absent.
+`is_available()` returning `False` on XPU hardware almost always means a
+missing host driver or a container that can't see `/dev/dri`.
 
 Three options:
 
-1. **Reuse a serving image** — `intel/vllm:*-xpu` ships a working
-   torch-xpu inside; start with `--entrypoint /bin/bash`.
+1. **Local venv** — same install command, no container.
 2. **Build a thin Dockerfile** on `ubuntu:24.04` or
-   `python:3.12-slim`, `pip install` torch with XPU per
-   <https://pytorch.org/get-started/locally/>.
-3. **Local venv** — same install command, no container.
+   `python:3.12-slim` and run the XPU-index install above. Canonical
+   docs are the PyTorch XPU notes:
+   <https://docs.pytorch.org/docs/stable/notes/get_start_xpu.html>
+   (the <https://pytorch.org/get-started/locally/> selector emits the
+   same command once you pick Linux + Pip + Python + Intel GPU, but it
+   is JS-rendered and shows nothing XPU-related when fetched as text).
+3. **Reuse a serving image** — `intel/vllm:*-xpu` ships a working
+   torch-xpu inside; start with `--entrypoint /bin/bash`.
 
 Launch with the GPU visible (see **xpu-container-run** for full
 flags):
