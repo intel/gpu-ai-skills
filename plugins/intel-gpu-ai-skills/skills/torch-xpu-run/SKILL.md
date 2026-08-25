@@ -5,8 +5,10 @@ description: Run an arbitrary Hugging Face safetensors model on an Intel GPU usi
 
 # torch-xpu-run
 
-Upstream PyTorch since 2.8 has a first-class `torch.xpu` namespace
-mirroring `torch.cuda`. Don't use `intel-extension-for-pytorch`
+Upstream PyTorch has a `torch.xpu` namespace mirroring `torch.cuda`
+(prototype since 2.5; this skill assumes >= 2.8, which is where the
+native `xccl` collective backend and the coverage below are dependable).
+Don't use `intel-extension-for-pytorch`
 (`ipex`) or `ipex-llm` — both are end-of-life (March 2026), upstream
 PyTorch supersedes them.
 
@@ -22,7 +24,7 @@ PyTorch supersedes them.
 | `model.to("cuda")` | `model.to("xpu")` |
 | `tensor.to("cuda:1")` | `tensor.to("xpu:1")` |
 | `with torch.autocast("cuda", torch.bfloat16)` | `with torch.autocast("xpu", torch.bfloat16)` |
-| `torch.cuda.amp.GradScaler()` | `torch.amp.GradScaler("xpu")` |
+| `torch.cuda.amp.GradScaler()` | `torch.amp.GradScaler("xpu")` — needs FP64 support, so disable it (`enabled=False`) on Arc A-Series, which lacks native FP64 |
 | `device_map="auto"` (Accelerate) | same; Accelerate detects XPU directly |
 | `dist.init_process_group(backend="nccl")` | `dist.init_process_group(backend="xccl")` <- only non-mechanical change |
 
@@ -57,16 +59,19 @@ Verify:
 python3 -c "import torch; print(torch.__version__, torch.xpu.is_available(), torch.xpu.device_count())"
 ```
 
-`torch.xpu.is_available() is True` is the authoritative signal. Linux
-wheels from the XPU index also carry a `+xpu` local version suffix
-(`2.8.0+xpu`), but source-built images — including some vendor serving
-images — drop it, so a missing suffix is not proof XPU is absent.
+`torch.xpu.is_available() is True` is the authoritative signal. Wheels
+from the XPU index also carry a `+xpu` local version suffix (e.g.
+`2.13.0+xpu`), as do the vendor serving images, but a PyTorch built from
+source does not unless the build sets it — so treat a missing suffix as
+a prompt to check `is_available()`, not as proof XPU is absent.
 `is_available()` returning `False` on XPU hardware almost always means a
-missing host driver or a container that can't see `/dev/dri`.
+missing host driver or a container that can't see `/dev/dri` (that case
+also logs `XPU device count is zero!`).
 
 Three options:
 
-1. **Local venv** — same install command, no container.
+1. **Reuse a serving image** — `intel/vllm:*-xpu` ships a working
+   torch-xpu inside; start with `--entrypoint /bin/bash`.
 2. **Build a thin Dockerfile** on `ubuntu:24.04` or
    `python:3.12-slim` and run the XPU-index install above. Canonical
    docs are the PyTorch XPU notes:
@@ -74,8 +79,7 @@ Three options:
    (the <https://pytorch.org/get-started/locally/> selector emits the
    same command once you pick Linux + Pip + Python + Intel GPU, but it
    is JS-rendered and shows nothing XPU-related when fetched as text).
-3. **Reuse a serving image** — `intel/vllm:*-xpu` ships a working
-   torch-xpu inside; start with `--entrypoint /bin/bash`.
+3. **Local venv** — same install command, no container.
 
 Launch with the GPU visible (see **xpu-container-run** for full
 flags):
@@ -93,28 +97,39 @@ docker run --rm -it \
 
 ## Quickstart
 
-**STOP — confirm before proceeding.** Before installing packages or
-downloading weights, ask the user to confirm:
-1. The model ID (and dtype if not bf16)
-2. That installing packages (`pip install torch transformers accelerate`)
-   and downloading multi-GB weights is acceptable
-
-Do not run `pip install`, `uv pip install`, or model download commands
-until the user explicitly confirms. This is a hard requirement.
-
-**Check before installing.** Always verify packages are already present
-before running `pip install`:
+**First, probe what is already here.** These imports are read-only —
+they install nothing and download nothing — so run them *before* asking
+the user anything. Nothing may be missing, in which case there is
+nothing to confirm:
 
 ```sh
+python3 -c "import torch; print(torch.__version__, torch.xpu.is_available(), torch.xpu.device_count())" 2>&1 && \
 python3 -c "import transformers; print(transformers.__version__)" 2>&1 && \
 python3 -c "import accelerate; print(accelerate.__version__)" 2>&1
 ```
 
-Only install if the import check fails:
+**Then STOP — confirm before proceeding.** If the probe shows something
+is missing, or the weights are not in the local cache, ask the user to
+confirm before installing packages or downloading weights:
+1. The model ID (and dtype if not bf16)
+2. That installing the specific packages the probe reported missing
+   (torch from the XPU index, `transformers>=4.56`, `accelerate`) and
+   downloading multi-GB weights is acceptable
+
+Do not run `pip install`, `uv pip install`, or model download commands
+until the user explicitly confirms. This is a hard requirement — the
+read-only probe above is the only thing that precedes it.
+
+Only install what the probe reports missing:
 
 ```sh
-pip install --quiet --break-system-packages 'transformers>=4.46' accelerate
+pip install --quiet --break-system-packages 'transformers>=4.56' accelerate
 ```
+
+Never add torch to that line — it must come from the XPU index (see
+**Where to get PyTorch with XPU**), and an unpinned `pip install`
+alongside other packages can silently replace a working `+xpu` build
+with the PyPI CUDA/CPU wheel.
 
 (`--break-system-packages` is needed under PEP 668 in Ubuntu
 24.04+; omit in older images, or use a venv.)
@@ -184,7 +199,8 @@ a model you haven't run on XPU before. Each setting addresses a named signal.
 - **`bfloat16`** — default. Battlemage / Arc Pro have full hardware support; `float16` works for most ops but a small set degrades
   or falls back to slow paths.
 - **`float32`** — diagnostic fallback when bf16 fails to load
-  (rare). Halves memory; not for production.
+  (rare). Doubles memory vs bf16 and roughly halves throughput; not
+  for production.
 
 For quantized models on XPU:
 
@@ -248,9 +264,9 @@ is on CPU.
 
 - `Cannot find any XPU devices` -> container missing GPU access;
   see **xpu-container-run**.
-- `Torch not compiled with XPU enabled` -> wrong PyTorch build. The
-  image must have `torch.__version__` ending in `+xpu`. The image
-  must have torch.xpu.is_available() with True output.
+- `Torch not compiled with XPU enabled` -> wrong PyTorch build (almost
+  always a plain `pip install torch` from PyPI). Reinstall from
+  `--index-url https://download.pytorch.org/whl/xpu`. The image must have torch.xpu.is_available() with True output.
 - `OSError: Tokenizer ... requires Hub access` -> set `HF_TOKEN` or
   `huggingface-cli login`.
 - `CUDA error: ...` literal substring inside an XPU workload -> a
