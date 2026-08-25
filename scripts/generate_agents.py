@@ -62,6 +62,12 @@ def main() -> int:
 
     OUT.parent.mkdir(exist_ok=True)
     with OUT.open("w") as f:
+        f.write("---\n")
+        f.write("name: intel-gpu-ai-skills-agent\n")
+        f.write("description: Router agent exposing Intel GPU AI skill packs ")
+        f.write("for running, benchmarking, and profiling Hugging Face ")
+        f.write("models, and migrating workloads from CUDA on Intel GPUs.\n")
+        f.write("---\n\n")
         f.write("<skills>\n\n")
         f.write("You have additional SKILLs documented in directories ")
         f.write('containing a "SKILL.md" file.\n\n')

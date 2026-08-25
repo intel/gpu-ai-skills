@@ -92,6 +92,18 @@ gemini extensions install . --consent
 gemini extensions install https://github.com/intel/gpu-ai-skills.git --consent
 ```
 
+> **Upgrading from an older install?** 
+>
+> Please uninstall it first. Clean out any existing installs before reinstalling:
+>
+> ```sh
+> gemini extensions list
+> gemini extensions uninstall intel-gpu-ai-skills     # current name, if present
+> rm -rf ~/.gemini/extensions/intel-gpu-ai-skills
+>
+> gemini extensions install . --consent
+> ```
+
 ### Clone / Copy
 
 For any other agent, clone this repo and copy the skill folders into the agent's skills directory:
