@@ -249,7 +249,8 @@ is on CPU.
 - `Cannot find any XPU devices` -> container missing GPU access;
   see **xpu-container-run**.
 - `Torch not compiled with XPU enabled` -> wrong PyTorch build. The
-  image must have `torch.__version__` ending in `+xpu`.
+  image must have `torch.__version__` ending in `+xpu`. The image
+  must have torch.xpu.is_available() with True output.
 - `OSError: Tokenizer ... requires Hub access` -> set `HF_TOKEN` or
   `huggingface-cli login`.
 - `CUDA error: ...` literal substring inside an XPU workload -> a
