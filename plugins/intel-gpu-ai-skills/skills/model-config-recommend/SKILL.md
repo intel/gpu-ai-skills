@@ -1,6 +1,6 @@
 ---
 name: model-config-recommend
-description: Recommend a vLLM-XPU deployment config (quant, KV dtype, DP/TP, max concurrency, max context) for a Hugging Face decoder-only LLM on Intel Arc B-series GPUs using roofline math against published hardware specs. Experimental; predictions are physics-bounded ranges, not measured throughput. Use after xpu-discover and before vllm-xpu-run.
+description: Recommend how to configure vLLM-XPU for a Hugging Face decoder-only LLM on Intel Arc B-series GPUs: choose quantization, KV dtype, DP/TP layout, max concurrency, and max context using roofline math against published hardware specs. Use when the user asks "How should I configure vLLM?", requests the best vLLM configuration, or asks how to use one or multiple Arc cards. Must run recommend.py; predictions are physics-bounded ranges, not measured throughput. Use after xpu-discover and before vllm-xpu-run.
 ---
 
 # model-config-recommend
@@ -13,7 +13,10 @@ measurements. Scoped to **vLLM-XPU**; for SGLang use
 
 The user has chosen an HF decoder-only LLM and wants to know which
 vLLM-XPU config (quant, KV dtype, DP/TP, max concurrency, max
-context) to start with on Intel Arc B-series. Skip when:
+context) to start with on Intel Arc B-series. Broad wording such as
+"How should I configure vLLM for this model on my Arc cards?" still
+activates this skill because it requires selecting layout and deployment
+parameters rather than merely launching a server. Skip when:
 
 - Exact throughput numbers required -> use **vllm-xpu-bench**.
 - VLM or diffusion model -> use **model-can-it-fit**.
@@ -31,7 +34,7 @@ fits on one GPU — there is no "it's small, skip this" exception:
    or from the "Worked example" numbers below.
 2. **State the layout as the literal `dp=N, tp=M` token** (e.g.
    `dp=1, tp=1`). Prose like "no TP needed" does not count.
-3. **Reproduce the full `docker run ... vllm serve ...` launch block**
+3. **Reproduce the full `docker run ... <model> ...` launch block**
    verbatim in a fenced code block. Never a flag table, a bare `vllm
    serve` line, or a "block above" pointer instead.
 
@@ -55,11 +58,11 @@ python3 scripts/recommend.py \
     --gpu-memory-utilization 0.85
 
 # Tier 2 (one-time per image)
-python3 scripts/calibrate.py --image intel/vllm:0.17.0-xpu --device arc-pro-b70
-# Then re-run Tier 1 with --use-calibration intel/vllm:0.17.0-xpu
+python3 scripts/calibrate.py --image vllm/vllm-openai-xpu:latest --device arc-pro-b70
+# Then re-run Tier 1 with --use-calibration vllm/vllm-openai-xpu:latest
 
 # Tier 3 (verify a candidate)
-python3 scripts/verify.py --image intel/vllm:0.17.0-xpu --device arc-pro-b70 \
+python3 scripts/verify.py --image vllm/vllm-openai-xpu:latest --device arc-pro-b70 \
     --model Qwen/Qwen2.5-1.5B-Instruct --quant fp8 --kv-dtype fp8 \
     --ctx 4096 --concurrency 4
 ```
@@ -97,8 +100,8 @@ only for what-if planning for a different host.
 ## Reporting the recommendation
 
 The launch block `recommend.py` prints begins with `docker run --rm
--d --name vllm-xpu ...` and ends with the `vllm serve <model> ...`
-flag list. Copy that whole block into a fenced ```bash block; the
+-d --name vllm-xpu ...` and ends with the model id plus serve flags.
+Copy that whole block into a fenced ```bash block; the
 recommender's stdout is not shown to the user, so a pointer like "the
 block above" leaves them with nothing to run. A flag table is fine
 *in addition*, never *instead*.
@@ -224,8 +227,8 @@ produces a block shaped like this:
 === Launch line for top candidate ===
 docker run --rm -d --name vllm-xpu \
     ...
-    intel/vllm:<tag>-xpu \
-    vllm serve <checkpoint> \
+    vllm/vllm-openai-xpu:latest \
+    <checkpoint> \
         ...
 ```
 

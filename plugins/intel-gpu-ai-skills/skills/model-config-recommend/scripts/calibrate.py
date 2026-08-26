@@ -13,7 +13,7 @@ invalidates when the image is re-pulled or the device changes.
 
 Usage:
     python3 scripts/calibrate.py \\
-        --image intel/vllm:0.17.0-xpu \\
+        --image vllm/vllm-openai-xpu:latest \\
         --device arc-pro-b70 \\
         --reference-model Qwen/Qwen2.5-1.5B-Instruct
 """
@@ -78,7 +78,7 @@ def run_reference_bench(image: str, model_id: str, port: int = 8765,
         "-v", f"{Path.home()}/.cache/huggingface:/root/.cache/huggingface",
         "-p", f"{port}:8000",
         image,
-        "vllm", "serve", model_id,
+        model_id,
         "--dtype", "bfloat16",
         "--enforce-eager",
         "--max-model-len", "2048",

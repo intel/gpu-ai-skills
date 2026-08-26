@@ -78,7 +78,7 @@ Three options:
    (the <https://pytorch.org/get-started/locally/> selector emits the
    same command once you pick Linux + Pip + Python + Intel GPU, but it
    is JS-rendered and shows nothing XPU-related when fetched as text).
-3. **Reuse a serving image** — `intel/vllm:*-xpu` ships a working
+3. **Reuse a serving image** — `vllm/vllm-openai-xpu:latest` ships a working
    torch-xpu inside; start with `--entrypoint /bin/bash`.
 
 Launch with the GPU visible (see **xpu-container-run** for full

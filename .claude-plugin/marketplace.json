@@ -62,7 +62,7 @@
       "skills": [
         "./"
       ],
-      "description": "Serve a Hugging Face safetensors model on an Intel GPU with upstream vLLM-XPU's OpenAI-compatible API. Covers image choice, container launch, the right vllm serve flags (dtype, enforce-eager, model-impl fallback, attention backend, quant + KV-cache pairing), and the transformers-backend fallback for unsupported architectures. Use for /v1/chat/completions or /v1/completions on an Intel GPU. Not for pure PyTorch without a server (use torch-xpu-run), throughput numbers (use vllm-xpu-bench), or NVIDIA (use vllm-project/vllm-skills)."
+      "description": "Serve a Hugging Face safetensors model on an Intel GPU with upstream vLLM-XPU's OpenAI-compatible API, or check whether a model or architecture is currently documented on XPU. Covers live support lookup, image choice, container launch, known serve-flag requirements, model-impl fallback, and attention/quant compatibility. Use to launch /v1/chat/completions or /v1/completions, troubleshoot a launch, or check model support. Not for choosing the best quantization, KV dtype, DP/TP layout, context, or concurrency (use model-config-recommend)."
     },
     {
       "name": "sglang-xpu-run",
@@ -134,7 +134,7 @@
       "skills": [
         "./"
       ],
-      "description": "Recommend a vLLM-XPU deployment config (quant, KV dtype, DP/TP, max concurrency, max context) for a Hugging Face decoder-only LLM on Intel Arc B-series GPUs using roofline math against published hardware specs. Experimental; predictions are physics-bounded ranges, not measured throughput. Use after xpu-discover and before vllm-xpu-run."
+      "description": "Recommend how to configure vLLM-XPU for a Hugging Face decoder-only LLM on Intel Arc B-series GPUs: choose quantization, KV dtype, DP/TP layout, max concurrency, and max context using roofline math against published hardware specs. Use when the user asks \"How should I configure vLLM?\", requests the best vLLM configuration, or asks how to use one or multiple Arc cards. Must run recommend.py; predictions are physics-bounded ranges, not measured throughput. Use after xpu-discover and before vllm-xpu-run."
     },
     {
       "name": "xpu-deploy-plan",

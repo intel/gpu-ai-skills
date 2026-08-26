@@ -36,8 +36,8 @@ docker run -d --name vllm-xpu \
     -e HF_TOKEN="$HF_TOKEN" \
     -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
     -p 8000:8000 \
-    intel/vllm:<version>-xpu \
-    vllm serve <model-id> \
+    vllm/vllm-openai-xpu:latest \
+    <model-id> \
         --dtype bfloat16 \
         --enforce-eager \
         --block-size=64 \
@@ -111,7 +111,7 @@ concurrency. Keep only if TPOT improves without TTFT regression.
 
 ## Legacy env-var names (older images only)
 
-On current `intel/vllm:*-xpu` images, prefer the CLI flags.
+On current `vllm/vllm-openai-xpu` images, prefer the CLI flags.
 If pinned to an older image, verify the image's `vllm.envs`
 surface and logs before assuming either spelling is accepted.
 
