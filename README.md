@@ -1,6 +1,6 @@
 # Intel GPU AI Skills
 
-A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for setting up, running, benchmarking, and profiling arbitrary Hugging Face safetensors and GGUF models on Intel GPUs (Arc, Arc Pro, Battlemage, Data Center GPU Max). Covers the PyTorch + Transformers, vLLM-XPU, SGLang-XPU, and llama.cpp-SYCL stacks, plus CUDA to XPU migration.
+A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for setting up, running, benchmarking, and profiling arbitrary Hugging Face safetensors and GGUF models on Intel GPUs (Arc, Arc Pro, Battlemage). Covers the PyTorch + Transformers, vLLM-XPU, SGLang-XPU, and llama.cpp-SYCL stacks, plus CUDA to XPU migration.
 
 Format follows the [Agent Skills specification](https://agentskills.io/specification).
 
