@@ -387,7 +387,7 @@ def emit_launch_line(model_id: str, quant: str, kv_dtype: str, tp: int,
                      dp: int = 1, gpu_memory_utilization: float = 0.85,
                      trust_remote_code: bool = False,
                      revision: str | None = None) -> str:
-    """Emit a copy-pasteable docker + vllm serve line.
+    """Emit a copy-pasteable Docker launch for the image's serve entrypoint.
 
     ``trust_remote_code`` is the caller's explicit opt-in. It is deliberately
     NOT inferred from the model's own ``config.json``: ``auto_map`` is a field
@@ -530,14 +530,14 @@ def emit_launch_line(model_id: str, quant: str, kv_dtype: str, tp: int,
             f"    -e HF_TOKEN=\"$HF_TOKEN\" \\\n"
             f"    -v \"$HOME/.cache/huggingface:/root/.cache/huggingface\" \\\n"
             f"    -p {port}:8000 \\\n"
-            f"    intel/vllm:0.17.0-xpu \\\n"
-            f"    vllm serve {served} \\\n"
+            f"    vllm/vllm-openai-xpu:latest \\\n"
+            f"    {served} \\\n"
             f"        {flags}{tp_extra_flag}"
         )
 
     header = (
-        "# Pick a current image tag from https://hub.docker.com/r/intel/vllm/tags\n"
-        "# (0.17.0-xpu is a known-stable choice as of writing).\n"
+        "# Official image: https://hub.docker.com/r/vllm/vllm-openai-xpu\n"
+        "# Pin an immutable digest for reproducible deployments.\n"
         "# First-time debugging: drop '--rm' below so logs survive a crash.\n"
         "# After launch, verify no stale env vars:\n"
         "#   docker logs <name> 2>&1 | grep -i 'Unknown vLLM environment'\n"

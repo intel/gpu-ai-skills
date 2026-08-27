@@ -15,7 +15,7 @@ percentile metrics or saturation throughput, use vllm-xpu-bench instead.
 
 Usage:
     python3 scripts/verify.py \\
-        --image intel/vllm:0.17.0-xpu \\
+        --image vllm/vllm-openai-xpu:latest \\
         --device arc-pro-b70 \\
         --model Qwen/Qwen2.5-1.5B-Instruct \\
         --quant fp8 --kv-dtype fp8 \\
@@ -129,7 +129,7 @@ def launch(image: str, model_id: str, quant: str, kv_dtype: str, ctx: int,
         cmd += ["-e", f"{k}={v}"]
     cmd += ["-v", f"{Path.home()}/.cache/huggingface:/root/.cache/huggingface",
             "-p", f"{port}:8000", image,
-            "vllm", "serve", model_id,
+            model_id,
             "--enforce-eager",
             f"--max-model-len={ctx}",
             "--gpu-memory-utilization=0.85",

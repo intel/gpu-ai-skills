@@ -21,7 +21,7 @@ quant="bf16"
 device="arc-pro-b70"
 device_vram_gb=32
 num_xpus=1
-image="${VLLM_XPU_IMAGE:-intel/vllm:<version>-xpu}"
+image="${VLLM_XPU_IMAGE:-vllm/vllm-openai-xpu:latest}"
 port=8000
 container_name="vllm-xpu"
 out_dir=".out/skills/xpu-deploy-plan"
@@ -45,7 +45,7 @@ Options:
   --device NAME         Recommender device id (default: arc-pro-b70)
   --device-vram-gb N    VRAM per XPU in GiB (default: 32, Arc Pro B70)
   --num-xpus N          Number of XPUs to use (default: 1)
-  --image TAG           Container image (default: $VLLM_XPU_IMAGE or intel/vllm:<version>-xpu)
+    --image TAG           Container image (default: $VLLM_XPU_IMAGE or vllm/vllm-openai-xpu:latest)
   --port N              Host port to publish (default: 8000)
   --container-name N    Container name (default: vllm-xpu)
   --out-dir DIR         Output dir (default: .out/skills/xpu-deploy-plan)
@@ -101,8 +101,7 @@ done
 # a value containing a double quote, a backslash, or a control character would
 # emit malformed JSON — or, worse, silently add a key a reader would attribute
 # to this script. Reject exactly those characters and nothing more: the charset
-# has to stay wide enough for the default --image (intel/vllm:<version>-xpu),
-# which carries a <version> placeholder the caller is meant to edit.
+# has to stay wide enough for the default container image reference.
 for v in model quant device image container_name; do
     val="${!v}"
     case "$val" in
