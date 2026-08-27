@@ -171,7 +171,7 @@ LAYER2_OK=true
 BOUND_COUNT=0
 # shellcheck disable=SC2086
 for BDF in $BMG_BDFS; do
-    DRIVER=$(readlink "/sys/bus/pci/devices/0000:$BDF/driver" 2>/dev/null \
+    DRIVER=$(readlink "/sys/bus/pci/devices/$BDF/driver" 2>/dev/null \
         | xargs basename 2>/dev/null || echo "none")
     case "$DRIVER" in
         xe)
