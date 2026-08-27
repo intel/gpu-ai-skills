@@ -40,7 +40,7 @@ Every item below is an external dependency installed independently by the end us
 | `transformers`, `huggingface_hub`, `safetensors`, `accelerate` | PyPI current | Apache-2.0 | PyPI |
 | `libcst` | PyPI current | MIT / PSF-2.0 / Apache-2.0 | PyPI |
 | `httpx[socks]` | PyPI current | BSD-3-Clause / MIT | PyPI |
-| `intel/vllm`, `intel/sglang-dev` | Container images | Apache-2.0 | Intel Registry |
+| `vllm/vllm-openai-xpu`, `intel/sglang-dev` | Container images | Apache-2.0 | Docker Hub |
 | `llama.cpp` | SYCL backend | MIT | ggml-org/llama.cpp |
 | `unitrace` | Build from source | MIT | intel/pti-gpu |
 

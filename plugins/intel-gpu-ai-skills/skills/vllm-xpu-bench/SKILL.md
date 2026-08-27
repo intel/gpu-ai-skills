@@ -75,8 +75,8 @@ docker run -d --name <container-name> \
     -e HF_TOKEN="$HF_TOKEN" \
     -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
     -p 8000:8000 \
-    intel/vllm:<version>-xpu \
-    vllm serve <model-id> \
+    vllm/vllm-openai-xpu:latest \
+    <model-id> \
         --dtype bfloat16 \
         --enforce-eager \
         --block-size=64 \
@@ -214,6 +214,7 @@ for regression diffs.
 
 ```sh
 docker run --rm \
+  --entrypoint vllm \
     --device /dev/dri \
     -v /dev/dri/by-path:/dev/dri/by-path:ro \
     --group-add "$(getent group render | cut -d: -f3)" \
@@ -221,7 +222,7 @@ docker run --rm \
     -e ZE_AFFINITY_MASK=0 \
     -e HF_TOKEN="$HF_TOKEN" \
     -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
-    intel/vllm:<version>-xpu \
+    vllm/vllm-openai-xpu:latest \
     bench throughput \
         --model Qwen/Qwen2.5-1.5B-Instruct \
         --dtype bfloat16 \

@@ -19,25 +19,28 @@ SYCL kernel level use **xpu-profile-unitrace**.
 
 ## Mode A — server + HTTP bracket
 
-Launch the server with profiler flags. Always launch from the upstream
-`intel/vllm:<version>-xpu` image — even if a running container or host
+Launch the server with profiler flags. Always launch from the official upstream
+`vllm/vllm-openai-xpu:latest` image — even if a running container or host
 process is using a different image (e.g. `intel/llm-scaler-vllm`), do
 **not** reuse that image for the profiling server; those stacks are out
 of scope (see **What this skill does NOT cover**).
 
 ```sh
-docker run --rm -d --name vllm-xpu-prof \
+docker run -d --name vllm-xpu-prof \
     --device /dev/dri \
     -v /dev/dri/by-path:/dev/dri/by-path:ro \
     --group-add "$(getent group render | cut -d: -f3)" \
     --ipc=host \
     -e ZE_AFFINITY_MASK=0 \
     -e VLLM_WORKER_MULTIPROC_METHOD=spawn \
+   -e HTTP_PROXY -e HTTPS_PROXY -e NO_PROXY \
+   -e http_proxy -e https_proxy -e no_proxy \
+   -e HF_TOKEN \
     -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
     -v "$PWD/traces:/work/traces" \
     -p 8000:8000 \
-    intel/vllm:<version>-xpu \
-    vllm serve Qwen/Qwen2.5-1.5B-Instruct \
+   vllm/vllm-openai-xpu:latest \
+   Qwen/Qwen2.5-1.5B-Instruct \
         --dtype bfloat16 --enforce-eager --max-model-len 4096 \
         --profiler-config.profiler=torch \
         --profiler-config.torch_profiler_dir=/work/traces
@@ -69,6 +72,20 @@ curl -X POST http://localhost:8000/stop_profile
 ls traces/
 ```
 
+`Qwen/Qwen2.5-1.5B-Instruct` is public, so `HF_TOKEN` is optional;
+it is forwarded for gated/private replacements and anonymous Hub rate
+limits. `-e HF_TOKEN` (no `=value`) passes through the host's already-exported
+variable without putting the token in the `docker` process argv, where
+`ps`/`/proc` on a shared host could expose it. The proxy lines are
+required on hosts whose containers cannot reach the Hub directly.
+Docker ignores unset proxy variable names.
+
+Cleanup after the trace has flushed:
+
+```sh
+docker stop vllm-xpu-prof && docker rm vllm-xpu-prof
+```
+
 Three artifacts written per profile (allow a few seconds for flush):
 
 - `<timestamp>-rank-<N>.<timestamp>.pt.trace.json.gz` — per-worker
@@ -94,15 +111,19 @@ Three artifacts written per profile (allow a few seconds for flush):
 
 ```sh
 docker run --rm \
+   --entrypoint vllm \
     --device /dev/dri \
     -v /dev/dri/by-path:/dev/dri/by-path:ro \
     --group-add "$(getent group render | cut -d: -f3)" \
     --ipc=host \
     -e ZE_AFFINITY_MASK=0 \
+   -e HTTP_PROXY -e HTTPS_PROXY -e NO_PROXY \
+   -e http_proxy -e https_proxy -e no_proxy \
+   -e HF_TOKEN \
     -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
     -v "$PWD/traces:/work/traces" \
-    intel/vllm:<version>-xpu \
-    vllm bench latency \
+   vllm/vllm-openai-xpu:latest \
+   bench latency \
         --model Qwen/Qwen2.5-1.5B-Instruct \
         --dtype bfloat16 \
         --enforce-eager \
@@ -155,7 +176,7 @@ docker run --rm \
 - SYCL-kernel events / hardware metrics -> **xpu-profile-unitrace**.
 - Fixing a hot kernel — out of scope.
 - `intel/llm-scaler-vllm` images — out of scope; launch the profiling
-  server from upstream `intel/vllm:<version>-xpu` instead.
+   server from upstream `vllm/vllm-openai-xpu:latest` instead.
 
 ## References
 

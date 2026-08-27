@@ -16,7 +16,7 @@ quant="bf16"
 kv_dtype="bfloat16"
 dp=1
 tp=1
-image="${VLLM_XPU_IMAGE:-intel/vllm:<version>-xpu}"
+image="${VLLM_XPU_IMAGE:-vllm/vllm-openai-xpu:latest}"
 port=8000
 container_name="vllm-xpu"
 trust_remote_code=0
@@ -34,7 +34,7 @@ Options:
   --kv-cache-dtype Q    bfloat16 (default) | fp8 | auto
   --dp N                Data-parallel replica count (default: 1)
   --tp N                Tensor-parallel size per replica (default: 1)
-  --image TAG           vLLM XPU image (default: $VLLM_XPU_IMAGE or intel/vllm:<version>-xpu)
+    --image TAG           vLLM XPU image (default: $VLLM_XPU_IMAGE or vllm/vllm-openai-xpu:latest)
   --port N              First host port to publish (default: 8000)
   --container-name N    Base container name (default: vllm-xpu)
   --trust-remote-code   Add --trust-remote-code
@@ -206,7 +206,7 @@ if [ "$tp" -gt 1 ]; then
         --tensor-parallel-size $tp"
 fi
 
-printf '# Pick a current image tag from https://hub.docker.com/r/intel/vllm/tags before launch.\n'
+printf '# Official image: https://hub.docker.com/r/vllm/vllm-openai-xpu; pin a digest for reproducibility.\n'
 printf '# To pass host proxy settings into Docker, keep the proxy -e lines below; Docker ignores unset env names.\n'
 if [ "$dp" -gt 1 ]; then
     printf '# DP=%s, TP=%s: launch %s replicas, then route traffic across ports %s..%s.\n' \
@@ -251,7 +251,7 @@ while [ "$replica" -lt "$dp" ]; do
     printf '    -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \\\n'
     printf '    -p %s:8000 \\\n' "$host_port"
     printf '    %s \\\n' "$image"
-    printf '    vllm serve %s \\\n' "$model"
+    printf '    %s \\\n' "$model"
     printf '        %s\n' "$serve_flags"
 
     replica=$((replica + 1))

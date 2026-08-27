@@ -1,21 +1,54 @@
 ---
 name: vllm-xpu-run
-description: Serve a Hugging Face safetensors model on an Intel GPU with upstream vLLM-XPU's OpenAI-compatible API. Covers image choice, container launch, the right vllm serve flags (dtype, enforce-eager, model-impl fallback, attention backend, quant + KV-cache pairing), and the transformers-backend fallback for unsupported architectures. Use for /v1/chat/completions or /v1/completions on an Intel GPU. Not for pure PyTorch without a server (use torch-xpu-run), throughput numbers (use vllm-xpu-bench), or NVIDIA (use vllm-project/vllm-skills).
+description: Serve a Hugging Face safetensors model on an Intel GPU with upstream vLLM-XPU's OpenAI-compatible API, or check whether a model or architecture is currently documented on XPU. Covers live support lookup, image choice, container launch, known serve-flag requirements, model-impl fallback, and attention/quant compatibility. Use to launch /v1/chat/completions or /v1/completions, troubleshoot a launch, or check model support. Not for choosing the best quantization, KV dtype, DP/TP layout, context, or concurrency (use model-config-recommend).
 ---
 
 # vllm-xpu-run
 
-Verified against upstream `intel/vllm:*-xpu` images.
+Use the official upstream `vllm/vllm-openai-xpu:latest` image.
 
 Upstream vLLM has a first-class XPU backend. The CLI is identical
 to the CUDA build (`vllm serve <model>`); device is detected from
 `torch.xpu.is_available()`. There is no `--device xpu` flag.
 
+The official image already sets `ENTRYPOINT ["vllm", "serve"]`.
+Pass the model id and serve flags directly after the image name. Do
+not append another `vllm serve`: that produces
+`vllm serve vllm serve <model>` and the container exits with code 2.
+
+## Current supported models and architectures
+
+When the user asks which models vLLM supports on Intel XPU, fetch the
+current upstream page at request time:
+
+<https://docs.vllm.ai/en/stable/models/hardware_supported_models/xpu/>
+
+Do not answer from memory and do not copy a static model list into this
+skill. Report both the explicitly listed **Model** rows and the
+**Architecture** column, because the recommended model table is not an
+exhaustive checkpoint allowlist.
+
+For a specific unlisted Hugging Face model, read its current
+`config.json` and compare every value in `architectures` with the live
+page's Architecture column. Report the evidence precisely:
+
+- Exact model row → explicitly documented on the fetched page.
+- Architecture match only → the architecture is documented on XPU, but
+  this exact checkpoint is not explicitly validated by the page; perform
+  a generation smoke test before claiming full support.
+- Neither matches → not documented by the current XPU page; this is not
+  proof of impossibility.
+
+Include the source URL and retrieval date in the answer. If the page
+cannot be fetched, report that failure and offer to retry rather than
+substituting a remembered list. Do not infer XPU support merely from
+general vLLM, CUDA, or Transformers support.
+
 ## CUDA → XPU cheat sheet
 
 | CUDA convention | XPU convention |
 |---|---|
-| `vllm/vllm-openai:latest` | `intel/vllm:<version>-xpu` |
+| `vllm/vllm-openai:latest` | `vllm/vllm-openai-xpu:latest` |
 | `--gpus all` | `--device /dev/dri` + `-v /dev/dri/by-path:/dev/dri/by-path:ro` + `--ipc=host` |
 | `--dtype auto` | `--dtype bfloat16` (explicit) |
 | CUDA graphs default | `--enforce-eager` |
@@ -27,11 +60,12 @@ Confirm the target image tag and model with the user before running
 the `docker run` command — container launches bind host devices and
 download multi-GB weights.
 
-Pin a versioned tag from <https://hub.docker.com/r/intel/vllm>;
-`:latest` floats. Replace `<version>-xpu` below. Generated plans
-should call `scripts/emit_launch.sh` instead of copying the template
-manually — that keeps image policy, proxy env propagation,
-quantization flags, and multi-XPU topology in one place.
+Pull the official XPU image from
+<https://hub.docker.com/r/vllm/vllm-openai-xpu>. The examples use
+`:latest`; pin an immutable digest for reproducible deployments.
+Generated plans should call `scripts/emit_launch.sh` instead of
+copying the template manually — that keeps image policy, proxy env
+propagation, quantization flags, and multi-XPU topology in one place.
 
 ```sh
 docker run -d --name vllm-xpu \
@@ -46,8 +80,8 @@ docker run -d --name vllm-xpu \
     -e HF_TOKEN="$HF_TOKEN" \
     -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
     -p 8000:8000 \
-    intel/vllm:<version>-xpu \
-    vllm serve Qwen/Qwen2.5-1.5B-Instruct \
+    vllm/vllm-openai-xpu:latest \
+    Qwen/Qwen2.5-1.5B-Instruct \
         --dtype bfloat16 \
         --enforce-eager \
         --block-size=64 \
@@ -174,6 +208,10 @@ while the server reports ready means the model loaded on CPU.
 
 ## What this skill does NOT cover
 
+- Choosing the best quantization, KV dtype, DP/TP layout, context, or
+  concurrency → **model-config-recommend**. Questions such as "How
+  should I configure vLLM on my Arc cards?" belong there even when the
+  user also names a model.
 - SGLang serving → **sglang-xpu-run**.
 - Pure PyTorch / Transformers → **torch-xpu-run**.
 - Throughput / TTFT / TPOT measurement → **vllm-xpu-bench**.
@@ -186,7 +224,7 @@ while the server reports ready means the model loaded on CPU.
 - `references/quantization.md` — quant × KV × attention backend
 - `references/multi-gpu-and-tuning.md` — TP, tuning, spec-decode, legacy envs
 - `references/remote-deploy.md` — serve + verify on a remote Intel GPU host over ssh
-- Image source: <https://hub.docker.com/r/intel/vllm>
+- Image source: <https://hub.docker.com/r/vllm/vllm-openai-xpu>
 - vLLM XPU installation: <https://docs.vllm.ai/en/latest/getting_started/xpu-installation.html>
 - vLLM Arc Pro B-series blog: <https://blog.vllm.ai/2025/11/11/intel-arc-pro-b.html>
 - vLLM #38064 (W4A8 fall-through): <https://github.com/vllm-project/vllm/issues/38064>

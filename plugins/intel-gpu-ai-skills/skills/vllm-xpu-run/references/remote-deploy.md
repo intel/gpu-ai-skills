@@ -35,8 +35,8 @@ ssh "$GPU_HOST" 'docker run -d --name vllm-xpu \
     -e HF_HUB_OFFLINE=1 -e TRANSFORMERS_OFFLINE=1 \
     -v <host-cache>:<host-cache> \
     -p 8000:8000 \
-    intel/vllm:<version>-xpu \
-    vllm serve <model-id> \
+    vllm/vllm-openai-xpu:latest \
+    <model-id> \
         --dtype bfloat16 \
         --enforce-eager \
         --block-size=64 \
