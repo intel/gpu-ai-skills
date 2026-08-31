@@ -2,9 +2,10 @@
 
 How releases of Intel GPU AI Skills are versioned, validated, and published.
 
-`CONTRIBUTING.md` covers the contributor side: licensing, DCO sign-off, branch naming,
-the fork-and-PR workflow, approvals, and validation gates. This document covers what
-maintainers do after a change lands on `main`.
+`CONTRIBUTING.md` covers the contributor side: licensing, DCO sign-off,
+[branch naming](CONTRIBUTING.md#branch-naming), the fork-and-PR workflow, approvals, and
+validation gates. This document covers what maintainers do after a change lands on
+`main`.
 
 Maintainers are responsible for release readiness, version selection, tagging, release
 notes, and keeping the required security and compliance checks satisfied.
