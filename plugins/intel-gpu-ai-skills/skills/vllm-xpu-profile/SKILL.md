@@ -180,5 +180,5 @@ docker run --rm \
 
 ## References
 
-- vLLM profiling guide: <https://docs.vllm.ai/en/latest/contributing/profiling/profiling_index.html>
+- vLLM profiling guide: <https://docs.vllm.ai/en/latest/contributing/profiling/>
 - Perfetto trace viewer: <https://ui.perfetto.dev>
