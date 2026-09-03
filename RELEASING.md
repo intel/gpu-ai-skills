@@ -39,7 +39,8 @@ a lightweight tag with no author, date, or signature and is not acceptable for a
 release.
 
 Then publish a GitHub Release with notes based on the changes since the previous
-release.
+release. Those notes are this project's changelog — there is no `CHANGELOG.md` file to
+keep in step.
 
 Once published, a release tag must not be moved, deleted and reused, or repointed to a
 different commit. Corrections require a new version.
@@ -50,7 +51,6 @@ different commit. Corrections require a new version.
 - [ ] `python3 scripts/generate_agents.py` leaves `agents/AGENTS.md` unchanged
 - [ ] The `HOW_TO_TEST.md` acceptance layer has run on an appropriate Intel GPU; record
       the tested device in the release notes
-- [ ] `CHANGELOG.md` is updated
 - [ ] `BOM.md` matches the release tree if third-party components changed
 - [ ] `README.md` install instructions validated from a clean environment
 - [ ] Required CI, security, licensing, and compliance gates are green
