@@ -118,7 +118,7 @@ fi
 
 # Match [8086:e211] or [8086:e223] exactly — avoids false-positives on other IDs
 # shellcheck disable=SC2046
-BMG_BDFS=$(lspci -d 8086: -nn 2>/dev/null \
+BMG_BDFS=$(lspci -D -d 8086: -nn 2>/dev/null \
     | grep -E '\[8086:e2(11|23)\]' \
     | awk '{print $1}' || true)
 
@@ -171,7 +171,7 @@ LAYER2_OK=true
 BOUND_COUNT=0
 # shellcheck disable=SC2086
 for BDF in $BMG_BDFS; do
-    DRIVER=$(readlink "/sys/bus/pci/devices/0000:$BDF/driver" 2>/dev/null \
+    DRIVER=$(readlink "/sys/bus/pci/devices/$BDF/driver" 2>/dev/null \
         | xargs basename 2>/dev/null || echo "none")
     case "$DRIVER" in
         xe)
