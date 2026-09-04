@@ -323,4 +323,4 @@ Save a baseline JSON, diff against it on upgrades.
 ## References
 
 - `references/sweep-and-compare.md` — concurrency sweep, quant benches, run-vs-run diff
-- vLLM bench docs: <https://docs.vllm.ai/en/latest/contributing/profiling/profiling_index.html#offline-batched-inference-benchmarks>
+- vLLM bench docs: <https://docs.vllm.ai/en/latest/benchmarking/cli/>

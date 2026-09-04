@@ -225,6 +225,6 @@ while the server reports ready means the model loaded on CPU.
 - `references/multi-gpu-and-tuning.md` — TP, tuning, spec-decode, legacy envs
 - `references/remote-deploy.md` — serve + verify on a remote Intel GPU host over ssh
 - Image source: <https://hub.docker.com/r/vllm/vllm-openai-xpu>
-- vLLM XPU installation: <https://docs.vllm.ai/en/latest/getting_started/xpu-installation.html>
+- vLLM XPU installation: <https://docs.vllm.ai/en/latest/getting_started/installation/gpu/?device=xpu>
 - vLLM Arc Pro B-series blog: <https://blog.vllm.ai/2025/11/11/intel-arc-pro-b.html>
 - vLLM #38064 (W4A8 fall-through): <https://github.com/vllm-project/vllm/issues/38064>

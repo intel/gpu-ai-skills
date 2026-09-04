@@ -203,7 +203,7 @@ For deeper testing — install round-trip, per-skill acceptance, end-to-end smok
 - [vllm-project/vllm-skills](https://github.com/vllm-project/vllm-skills) — NVIDIA equivalents
 - [huggingface/skills](https://github.com/huggingface/skills) — Hub workflows
 - [PyTorch XPU getting started](https://docs.pytorch.org/docs/stable/notes/get_start_xpu.html)
-- [vLLM XPU installation](https://docs.vllm.ai/en/latest/getting_started/xpu-installation.html)
+- [vLLM XPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/?device=xpu)
 
 ## License
 
