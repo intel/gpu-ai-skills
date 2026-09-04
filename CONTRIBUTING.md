@@ -81,14 +81,41 @@ All changes land through pull requests against `main`. Do not commit to
 `main` directly.
 
 1. Fork the repository, or clone it directly if you have write access.
-2. Create a topic branch from the tip of `main`. Use a short descriptive
-   name such as `fix/vllm-xpu-run-typo` or `skill/xpu-newthing`.
+2. Create a topic branch from the tip of `main`, named as described in
+   [Branch naming](#branch-naming) below.
 3. Make your change. Keep each commit to one logical change and sign it off.
 4. Run the validation gate described below and make sure it passes.
 5. Push the branch and open a pull request against `main`. Explain what
    changed and why, and link any related issue.
 6. Address review feedback with follow-up commits or a rebase. Rebase on
    `main` rather than merging `main` into your branch.
+
+### Branch naming
+
+Use `<prefix>/<short-topic>`. Either prefix form is accepted:
+
+| Form | Use it for | Examples |
+| --- | --- | --- |
+| `<type>/<topic>` | Changes described by what they do | `fix/vllm-xpu-run-typo`, `feat/comfyui-xpu-run`, `docs/branch-naming` |
+| `<username>/<topic>` | Your own in-progress work | `yourname/fix-gpt-oss`, `yourname/add-evaluation` |
+
+Recognized types are `feat` (new skill or capability), `fix`, `docs`, `test`,
+`chore` (tooling, CI, maintenance), and `refactor`.
+
+Rules:
+
+- Lowercase, with hyphens between words. No spaces, and no `#` or `~`.
+- One slash. `feat/xpu-newthing`, not `feat/xpu/newthing`.
+- Keep it short and specific. Name the thing you changed, so the branch is
+  recognizable in a list of many: `fix/vllm-xpu-run-typo`, not `fix/bug`.
+- Nothing in CI parses the prefix, so it is a readability convention rather
+  than a hard gate. Follow it anyway so branch lists stay scannable.
+
+Topic branches are short-lived: merge them within days and delete them after
+merge. Releases are tagged directly from `main`, as described in
+[RELEASING.md](RELEASING.md), so the project keeps no long-lived release,
+`develop`, or version branches. Do not open a pull request from your fork's
+`main`.
 
 ## Review process
 
