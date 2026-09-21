@@ -223,12 +223,14 @@ printf '\n%b\n' "${BOLD}── Layer 3: Compute Runtime ──${NC}"
 LAYER3_OK=true
 OPENCL_PLATFORMS=0
 
-# Check kobuk-team PPA is configured (needed for --fix runtime upgrade)
-# Filter commented-out lines to avoid false positives
-PPA_CONFIGURED=false
-if grep -Rhs 'kobuk-team/intel-graphics' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
+# Check the Intel OMIX repo is configured (needed for --fix runtime upgrade).
+# Also recognizes the legacy kobuk-team PPA in case a host still has it from
+# before xpu-system-setup switched to OMIX-only. Filter commented-out lines
+# to avoid false positives.
+REPO_CONFIGURED=false
+if grep -Rhs -E 'kobuk-team/intel-graphics|intel-omix' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
     | grep -vE '^[[:space:]]*#' | grep -q .; then
-    PPA_CONFIGURED=true
+    REPO_CONFIGURED=true
 fi
 
 # Live OpenCL check is the ground truth — check this first.
@@ -298,7 +300,7 @@ if command -v xpu-smi &>/dev/null; then
         XPU_SMI_MINOR=$(printf '%s' "$XPU_SMI_VER" | cut -d. -f2)
         if [ "$XPU_SMI_MAJOR" -lt 1 ] \
             || { [ "$XPU_SMI_MAJOR" -eq 1 ] && [ "$XPU_SMI_MINOR" -lt 3 ]; }; then
-            warn "xpu-smi $XPU_SMI_VER may not enumerate B70 (1.3+ recommended from kobuk-team PPA)"
+            warn "xpu-smi $XPU_SMI_VER may not enumerate B70 (1.3+ recommended; install via xpu-system-setup)"
         else
             pass "xpu-smi version $XPU_SMI_VER >= 1.3"
             DISCOVERY=$(xpu-smi discovery 2>/dev/null || true)
@@ -311,7 +313,7 @@ if command -v xpu-smi &>/dev/null; then
         fi
     fi
 else
-    fail "xpu-smi not installed — install xpu-smi >= 1.3 from the kobuk-team PPA"
+    fail "xpu-smi not installed — install xpu-smi >= 1.3 via xpu-system-setup"
     NEED_RUNTIME=true
     LAYER3_OK=false
 fi
@@ -371,10 +373,10 @@ fi
 if $NEED_RUNTIME; then
     printf '%b Install compute runtime >=26.18 via xpu-system-setup:\n' "$BOLD"
     printf '    bash scripts/setup_xpu_system.sh --auto\n\n'
-    printf '  The kobuk-team PPA (added by xpu-system-setup) ships runtime 26.18+\n'
-    printf '  and will upgrade any previously installed Intel client repo packages.\n\n'
+    printf '  This adds the Intel OMIX repo (repositories.intel.com) which ships\n'
+    printf '  runtime 26.18+, and will upgrade any previously installed Intel GPU packages.\n\n'
     if [ "$MODE" = fix ]; then
-        if $PPA_CONFIGURED; then
+        if $REPO_CONFIGURED; then
             if confirm "Install or upgrade libze-intel-gpu1, intel-opencl-icd, and xpu-smi now?"; then
                 run_fix "apt-get install runtime" \
                     env DEBIAN_FRONTEND=noninteractive \
@@ -382,14 +384,14 @@ if $NEED_RUNTIME; then
                 printf '%b Runtime packages installed/upgraded. Re-run this script to verify.\n' "$PASS"
             fi
         else
-            printf '%b kobuk-team PPA not yet configured — run xpu-system-setup first:\n' "$WARN"
+            printf '%b No Intel GPU repo configured yet — run xpu-system-setup first:\n' "$WARN"
             printf '    bash scripts/setup_xpu_system.sh --auto\n\n'
         fi
     elif [ "$MODE" = dryrun ]; then
-        if $PPA_CONFIGURED; then
+        if $REPO_CONFIGURED; then
             dryrun_note "apt-get install -y libze-intel-gpu1 intel-opencl-icd xpu-smi"
         else
-            printf '%b  DRY-RUN: kobuk-team PPA not configured — would need to run setup_xpu_system.sh first\n' \
+            printf '%b  DRY-RUN: no Intel GPU repo configured — would need to run setup_xpu_system.sh first\n' \
                 "${YELLOW}»${NC}"
         fi
     fi
