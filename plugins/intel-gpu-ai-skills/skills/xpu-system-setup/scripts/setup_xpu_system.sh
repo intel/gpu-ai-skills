@@ -18,6 +18,32 @@ TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
 TARGET_HOME="${TARGET_HOME:-$HOME}"
 OUT_DIR="${TARGET_HOME}/.out/skills/xpu-system-setup"
 
+# Intel OMIX (Open Middleware Xe) is the sole install path: a bundle of
+# Level Zero, OpenCL, the SYCL compiler, and oneMKL/oneDNN. Do not also add
+# the legacy per-package PPA (ppa:kobuk-team/intel-graphics) on the same host
+# -- Intel's OMIX docs call for "a clean system without preinstalled Intel
+# GPU user-mode packages from the PPA", and mixing them causes apt dependency
+# conflicts (an OMIX-pinned package fighting a newer PPA version of the same
+# package).
+INCLUDE_DEV=false
+
+# --- Facts sourced from dgpu-docs.intel.com ---
+# Last verified against the live pages on 2026-09-17. NOT re-fetched at
+# runtime by this script. Before relying on this skill, or if anything below
+# looks wrong (install fails, package not found, distro rejected), an agent
+# running this skill should fetch the two URLs below and reconcile these
+# constants against the current page content -- see "Keeping this current"
+# in SKILL.md for exactly what to check and where.
+OMIX_DOC_URL="https://dgpu-docs.intel.com/installation-guides/installing-omix.html"
+OMIX_CODENAMES="resolute noble"                 # Ubuntu codenames OMIX doc lists as supported
+# No version segment is written into the repo line (.../intel-omix unified,
+# not .../intel-omix/<series> unified) -- per the OMIX doc, omitting the
+# version always resolves the latest release compliant with the detected
+# codename, so this never goes stale like a hardcoded series would.
+OMIX_GPG_KEY_URL="https://repositories.intel.com/gpu/intel-graphics.key"
+OMIX_RUNTIME_PKG="intel-omix"
+OMIX_DEV_PKG="intel-omix-dev"
+
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,12 +59,15 @@ Options:
   --auto            Run all checks and install missing components without prompts
   --dry-run         Show what would be done without making changes
   --yes             Same as --auto (non-interactive mode)
+  --include-dev     Also install the OMIX dev package (intel-omix-dev): SYCL/
+                    oneMKL/oneDNN headers for building from source. Runtime-only
+                    (intel-omix) is installed by default and is enough to run
+                    PyTorch/XPU workloads.
   --only LIST       Comma-separated list of components to setup:
-                    intel-ppa, compute-packages, media-packages, pytorch-extras,
-                    xpu-smi, groups, docker
-                    Note: compute-packages, media-packages, pytorch-extras, and
-                    xpu-smi require intel-ppa. Include it in --only if not already
-                    configured (e.g. --only intel-ppa,xpu-smi).
+                    omix-repo, omix-runtime, omix-dev, clinfo, xpu-smi, groups,
+                    docker
+                    Note: omix-runtime/omix-dev require omix-repo. Include it
+                    in --only if not already configured.
   --skip LIST       Comma-separated list of components to skip
   --out-dir DIR     Output directory (default: ~/.out/skills/xpu-system-setup)
   --user USER       Target user for group membership (default: current user)
@@ -46,10 +75,15 @@ Options:
 
 Default mode is interactive - prompts before each installation.
 
+Supported Ubuntu versions and package/repo details are verified against
+dgpu-docs.intel.com as of the date noted near the top of this script -- see
+"Keeping this current" in SKILL.md if that verification needs to be redone.
+
 Examples:
-  setup_xpu_system.sh                      # Interactive mode, prompts for each component
+  setup_xpu_system.sh                      # Interactive mode, installs OMIX
   setup_xpu_system.sh --auto               # Non-interactive, installs all
   setup_xpu_system.sh --dry-run            # Show what would be done
+  setup_xpu_system.sh --auto --include-dev # Also install intel-omix-dev
   setup_xpu_system.sh --only xpu-smi,groups
   setup_xpu_system.sh --auto --skip docker
 EOF
@@ -68,6 +102,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --auto|--yes|-y) AUTO=true; INTERACTIVE=false; shift ;;
         --dry-run) DRY_RUN=true; shift ;;
+        --include-dev) INCLUDE_DEV=true; shift ;;
         --only) require_value "$1" "${2:-}"; ONLY="$2"; shift 2 ;;
         --skip) require_value "$1" "${2:-}"; SKIP="$2"; shift 2 ;;
         --out-dir) require_value "$1" "${2:-}"; OUT_DIR="$2"; shift 2 ;;
@@ -96,14 +131,71 @@ record() {
     echo -e "${component}\t${before}\t${action}\t${after}\t${result}" >> "$STATUS_TSV"
 }
 
+is_omix_repo_configured() {
+    local deb822_files=()
+    # Match an active apt source for the exact detected codename. A bare
+    # "intel-omix" substring also matches commented-out entries or notes
+    # copied into list files, which would falsely report "configured" and
+    # skip repo setup. Only live binary `deb` entries count here: `deb-src`
+    # alone cannot satisfy `apt install intel-omix`.
+    if grep -RhsE '^[[:space:]]*deb[[:space:]]+' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null \
+        | awk -v codename="$DISTRO_CODENAME" '
+            {
+                line = $0
+                sub(/^[[:space:]]*deb[[:space:]]+/, "", line)
+                sub(/^\[[^]]+\][[:space:]]+/, "", line)
+                if (line ~ "^https?://repositories\\.intel\\.com/gpu/ubuntu/?[[:space:]]+" codename "/intel-omix[[:space:]]+unified([[:space:]]+.*)?$") {
+                    found = 1
+                    exit
+                }
+            }
+            END {
+                exit !found
+            }
+        '; then
+        return 0
+    fi
+
+    if grep -qE '^[[:space:]]*(Types|URIs|Suites|Components):' /etc/apt/sources.list 2>/dev/null; then
+        deb822_files+=("/etc/apt/sources.list")
+    fi
+
+    if compgen -G "/etc/apt/sources.list.d/*.sources" >/dev/null; then
+        deb822_files+=(/etc/apt/sources.list.d/*.sources)
+    fi
+
+    if [[ "${#deb822_files[@]}" -gt 0 ]]; then
+        awk -v codename="$DISTRO_CODENAME" '
+            BEGIN {
+                RS = ""
+                IGNORECASE = 1
+            }
+            {
+                block = tolower($0)
+                if (block ~ /(^|\n)types:[^\n]*([[:space:]]|^)deb([[:space:]]|$)/ &&
+                    block ~ /(^|\n)uris:[^\n]*https?:\/\/repositories\.intel\.com\/gpu\/ubuntu\/?([[:space:]]|$)/ &&
+                    block ~ "(^|\n)suites:[^\n]*" tolower(codename) "/intel-omix([[:space:]]|$)" &&
+                    block ~ /(^|\n)components:[^\n]*([[:space:]]|^)unified([[:space:]]|$)/) {
+                    found = 1
+                    exit
+                }
+            }
+            END {
+                exit !found
+            }
+        ' "${deb822_files[@]}" 2>/dev/null && return 0
+    fi
+
+    return 1
+}
+
 # Component aliases — short forms users may pass to --only / --skip.
 # Keeps the interface forgiving: e.g. `--skip media` → skips `media-packages`.
 normalize_component_list() {
     local list="$1"
-    list="${list//,media,/,media-packages,}"
-    list="${list//,compute,/,compute-packages,}"
-    list="${list//,pytorch,/,pytorch-extras,}"
-    list="${list//,ppa,/,intel-ppa,}"
+    list="${list//,repo,/,omix-repo,}"
+    list="${list//,runtime,/,omix-runtime,}"
+    list="${list//,dev,/,omix-dev,}"
     echo "$list"
 }
 
@@ -124,9 +216,13 @@ should_install() {
     return 0
 }
 
-is_ppa_configured() {
-    find /etc/apt/sources.list.d/ -name "*kobuk*" -o -name "*intel-graphics*" 2>/dev/null | grep -q . || \
-    grep -rls "kobuk-team/intel-graphics" /etc/apt/sources.list.d/ 2>/dev/null | grep -q .
+# True only if the component was explicitly named in --only.
+is_explicitly_requested() {
+    local component="$1"
+    [[ -n "$ONLY" ]] || return 1
+    local only_norm
+    only_norm=$(normalize_component_list ",$ONLY,")
+    echo "$only_norm" | grep -q ",$component,"
 }
 
 run_or_dry() {
@@ -152,6 +248,7 @@ ask_confirm() {
 }
 
 need_sudo() {
+    [[ "$DRY_RUN" == "true" ]] && return 0
     if [[ $EUID -ne 0 ]]; then
         if [[ "$INTERACTIVE" == "true" ]]; then
             if ! sudo -v 2>/dev/null; then
@@ -220,314 +317,221 @@ detect_distro() {
         exit 1
     fi
 
-    case "$DISTRO_ID" in
-        ubuntu)
-            # Per https://dgpu-docs.intel.com/driver/client/overview.html
-            # The ppa:kobuk-team/intel-graphics PPA supports Ubuntu 24.04 and 25.10
-            case "$DISTRO_VERSION" in
-                24.04|25.10)
-                    # Officially supported versions
-                    ;;
-                22.04)
-                    fail "Ubuntu 22.04 requires a different installation method"
-                    fail "The ppa:kobuk-team/intel-graphics PPA is for Ubuntu 24.04 and 25.10 only"
-                    fail "For Ubuntu 22.04 instructions, see: https://dgpu-docs.intel.com/driver/client/overview.html"
-                    exit 1
-                    ;;
-                20.04|21.*|23.*)
-                    fail "Ubuntu $DISTRO_VERSION is not supported"
-                    fail "This skill requires Ubuntu 24.04 or 25.10"
-                    fail "See: https://dgpu-docs.intel.com/driver/client/overview.html"
-                    exit 1
-                    ;;
-                *)
-                    # Newer versions than tested - might work
-                    warn "Ubuntu $DISTRO_VERSION is not officially tested"
-                    warn "This skill is tested on Ubuntu 24.04 and 25.10"
-                    warn "Newer versions may work but are untested"
-                    ;;
-            esac
-            ;;
-        *)
-            fail "Unsupported distribution: $DISTRO_ID $DISTRO_VERSION"
-            fail "This skill requires Ubuntu 24.04 or 25.10."
-            fail "The Intel client GPU PPA (ppa:kobuk-team/intel-graphics) is Ubuntu-specific."
-            fail "For other distros, see: https://dgpu-docs.intel.com/driver/client/overview.html"
-            exit 1
-            ;;
-    esac
+    if [[ "$DISTRO_ID" != "ubuntu" ]]; then
+        fail "Unsupported distribution: $DISTRO_ID $DISTRO_VERSION"
+        fail "This skill requires Ubuntu; supported versions are verified against dgpu-docs.intel.com."
+        fail "For other distros, see: https://dgpu-docs.intel.com/installation-guides/index.html"
+        return 1
+    fi
+
+    # Supported-codename list is the OMIX_CODENAMES constant declared near
+    # the top of this script (last verified against dgpu-docs.intel.com --
+    # see SKILL.md "Keeping this current") — never hardcoded inline here,
+    # since the doc's supported-version list has changed over time.
+    info "Supported codenames per OMIX doc: $OMIX_CODENAMES"
+    if [[ " $OMIX_CODENAMES " != *" $DISTRO_CODENAME "* ]]; then
+        fail "Ubuntu codename '$DISTRO_CODENAME' ($DISTRO_VERSION) is not in the last-verified OMIX supported list ($OMIX_CODENAMES). Re-check $OMIX_DOC_URL and update OMIX_CODENAMES before running this installer on this release."
+        return 1
+    fi
     info "Detected: $DISTRO_ID $DISTRO_VERSION ($DISTRO_CODENAME)"
 }
 
-# --- Component: Intel GPU PPA (ppa:kobuk-team/intel-graphics) ---
-check_intel_ppa() {
-    info "Checking Intel GPU PPA (ppa:kobuk-team/intel-graphics)..."
+# --- Component: OMIX repo (sole install path) ---
+check_omix_repo() {
+    info "Checking Intel OMIX repo (intel-omix, latest release)..."
 
     local before="missing"
-    if find /etc/apt/sources.list.d/ -name "*kobuk*" -o -name "*intel-graphics*" 2>/dev/null | grep -q . || \
-       grep -rls "kobuk-team/intel-graphics" /etc/apt/sources.list.d/ 2>/dev/null | grep -q .; then
+    if is_omix_repo_configured; then
         before="present"
-        ok "Intel GPU PPA (kobuk-team/intel-graphics) already configured"
-        record "intel-ppa" "$before" "none" "present" "PASS"
+        ok "Intel OMIX repo already configured"
+        record "omix-repo" "$before" "none" "present" "PASS"
         return 0
     fi
 
-    if ! should_install "intel-ppa"; then
-        info "Intel GPU PPA missing — install skipped (filtered by --only/--skip)"
-        record "intel-ppa" "$before" "filtered-by-only" "missing" "FILTERED"
+    if ! should_install "omix-repo"; then
+        info "Intel OMIX repo missing — install skipped (filtered by --only/--skip)"
+        record "omix-repo" "$before" "filtered-by-only" "missing" "FILTERED"
         return 0
     fi
 
     if [[ "$DRY_RUN" != "true" ]]; then
-        if ! ask_confirm "Install Intel GPU PPA (ppa:kobuk-team/intel-graphics)?"; then
-            info "Skipped Intel GPU PPA installation"
-            record "intel-ppa" "$before" "skipped-by-user" "missing" "SKIPPED"
+        if ! ask_confirm "Add Intel OMIX repo (intel-omix, latest release) and GPG key?"; then
+            info "Skipped Intel OMIX repo setup"
+            record "omix-repo" "$before" "skipped-by-user" "missing" "SKIPPED"
             return 0
         fi
     fi
 
-    info "Adding Intel GPU PPA (ppa:kobuk-team/intel-graphics)..."
+    info "Adding Intel OMIX repo for $DISTRO_CODENAME..."
     need_sudo || return 1
 
     run_or_dry sudo_cmd apt-get update -qq
-    run_or_dry sudo_cmd apt-get install -y -qq software-properties-common
-    run_or_dry sudo_cmd add-apt-repository -y ppa:kobuk-team/intel-graphics
-    run_or_dry sudo_cmd apt-get update -qq
+    run_or_dry sudo_cmd apt-get install -y -qq gnupg wget
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        record "intel-ppa" "$before" "would-add" "pending" "DRY-RUN"
+        info "[DRY-RUN] Would fetch $OMIX_GPG_KEY_URL and write /etc/apt/sources.list.d/intel-gpu-$DISTRO_CODENAME.list"
+        record "omix-repo" "$before" "would-add" "pending" "DRY-RUN"
+        return 0
+    fi
+
+    wget -qO - "$OMIX_GPG_KEY_URL" | sudo_cmd gpg --yes --dearmor --output /usr/share/keyrings/intel-graphics.gpg
+    # No version segment -- apt resolves the latest OMIX release compliant with $DISTRO_CODENAME.
+    local repo_line="deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${DISTRO_CODENAME}/intel-omix unified"
+    echo "$repo_line" | sudo_cmd tee "/etc/apt/sources.list.d/intel-gpu-${DISTRO_CODENAME}.list" >/dev/null
+    sudo_cmd apt-get update -qq
+
+    if is_omix_repo_configured; then
+        ok "Intel OMIX repo added"
+        record "omix-repo" "$before" "added" "present" "PASS"
     else
-        ok "Intel GPU PPA added"
-        record "intel-ppa" "$before" "added" "present" "PASS"
+        fail "Intel OMIX repo setup failed"
+        record "omix-repo" "$before" "add-failed" "missing" "FAIL"
+        return 1
     fi
 }
 
-# --- Component: Compute packages (official Intel list) ---
-# Per https://dgpu-docs.intel.com/driver/client/overview.html
-COMPUTE_PACKAGES="libze-intel-gpu1 libze1 intel-metrics-discovery intel-opencl-icd clinfo intel-gsc"
+# --- Component: OMIX runtime (intel-omix) ---
+check_omix_runtime() {
+    info "Checking Intel OMIX runtime ($OMIX_RUNTIME_PKG)..."
 
-check_compute_packages() {
-    info "Checking compute packages..."
-
-    local missing=""
-    for pkg in $COMPUTE_PACKAGES; do
-        if ! dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
-            missing="$missing $pkg"
-        fi
-    done
-
-    if [[ -z "$missing" ]]; then
+    local before="missing"
+    if dpkg -l "$OMIX_RUNTIME_PKG" 2>/dev/null | grep -q "^ii"; then
+        before="present"
         local ver
-        ver=$(dpkg -l libze-intel-gpu1 2>/dev/null | awk '/^ii/{print $3}')
-        ok "All compute packages installed (libze-intel-gpu1 $ver)"
-        record "compute-packages" "present" "none" "present" "PASS"
+        ver=$(dpkg -l "$OMIX_RUNTIME_PKG" 2>/dev/null | awk '/^ii/{print $3}')
+        ok "$OMIX_RUNTIME_PKG already installed ($ver)"
+        record "omix-runtime" "$before" "none" "present" "PASS"
         return 0
     fi
 
-    local before="missing:$missing"
-
-    if ! should_install "compute-packages"; then
-        info "Compute packages missing — install skipped (filtered by --only/--skip)"
-        record "compute-packages" "$before" "filtered-by-only" "incomplete" "FILTERED"
+    if ! should_install "omix-runtime"; then
+        info "$OMIX_RUNTIME_PKG missing — install skipped (filtered by --only/--skip)"
+        record "omix-runtime" "$before" "filtered-by-only" "missing" "FILTERED"
         return 0
     fi
 
-    if ! is_ppa_configured && [[ "$DRY_RUN" != "true" ]]; then
-        fail "Intel GPU PPA is not configured — compute packages require it."
-        fail "Re-run with: --only intel-ppa,compute-packages"
-        record "compute-packages" "$before" "missing-ppa" "incomplete" "FAIL"
+    if ! is_omix_repo_configured && [[ "$DRY_RUN" != "true" ]]; then
+        fail "Intel OMIX repo is not configured — $OMIX_RUNTIME_PKG requires it."
+        fail "Re-run with: --only omix-repo,omix-runtime"
+        record "omix-runtime" "$before" "missing-repo" "missing" "FAIL"
         return 1
     fi
 
     if [[ "$DRY_RUN" != "true" ]]; then
-        if ! ask_confirm "Install compute packages ($COMPUTE_PACKAGES)?"; then
-            info "Skipped compute packages installation"
-            record "compute-packages" "$before" "skipped-by-user" "incomplete" "SKIPPED"
+        if ! ask_confirm "Install Intel OMIX runtime ($OMIX_RUNTIME_PKG)?"; then
+            info "Skipped $OMIX_RUNTIME_PKG installation"
+            record "omix-runtime" "$before" "skipped-by-user" "missing" "SKIPPED"
             return 0
         fi
     fi
 
-    info "Installing compute packages:$missing"
+    info "Installing $OMIX_RUNTIME_PKG..."
     need_sudo || return 1
-    # shellcheck disable=SC2086
-    run_or_dry sudo_cmd apt-get install -y -qq $COMPUTE_PACKAGES
+    run_or_dry sudo_cmd apt-get install -y -qq "$OMIX_RUNTIME_PKG"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        record "compute-packages" "$before" "would-install" "pending" "DRY-RUN"
+        record "omix-runtime" "$before" "would-install" "pending" "DRY-RUN"
+    elif dpkg -l "$OMIX_RUNTIME_PKG" 2>/dev/null | grep -q "^ii"; then
+        ok "$OMIX_RUNTIME_PKG installed"
+        record "omix-runtime" "$before" "installed" "present" "PASS"
     else
-        local still_missing=""
-        for pkg in $COMPUTE_PACKAGES; do
-            if ! dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
-                still_missing="$still_missing $pkg"
-            fi
-        done
-        if [[ -z "$still_missing" ]]; then
-            ok "Compute packages installed"
-            record "compute-packages" "$before" "installed" "present" "PASS"
-        else
-            fail "Compute install incomplete — still missing:$still_missing"
-            record "compute-packages" "$before" "install-incomplete" "missing:$still_missing" "FAIL"
-        fi
+        fail "$OMIX_RUNTIME_PKG install failed"
+        record "omix-runtime" "$before" "install-failed" "missing" "FAIL"
     fi
 }
 
-# --- Component: Media packages ---
-# VAAPI stack used for hardware video encode/decode. Compute-only servers
-# can skip with `--skip media`.
-#
-# Ubuntu 25.10 renamed `libmfx-gen1` to `libmfx-gen1.2`; we resolve the actual
-# package name from the apt cache at runtime so we work across releases.
-MEDIA_PACKAGES_BASE="intel-media-va-driver-non-free libvpl2 libvpl-tools libva-glx2 va-driver-all vainfo"
+# --- Component: OMIX dev (intel-omix-dev, opt-in via --include-dev) ---
+check_omix_dev() {
+    info "Checking Intel OMIX dev package ($OMIX_DEV_PKG)..."
 
-resolve_media_packages() {
-    # Pick whichever libmfx-gen variant the apt cache offers on this distro.
-    local libmfx=""
-    for cand in libmfx-gen1.2 libmfx-gen1; do
-        if apt-cache show "$cand" &>/dev/null; then
-            libmfx="$cand"; break
-        fi
-    done
-    if [[ -z "$libmfx" ]]; then
-        # Last-resort fallback to keep the historical name in error messages.
-        libmfx="libmfx-gen1"
-    fi
-    echo "$MEDIA_PACKAGES_BASE $libmfx"
-}
-
-check_media_packages() {
-    info "Checking media packages..."
-
-    local media_pkgs
-    media_pkgs=$(resolve_media_packages)
-
-    local missing=""
-    for pkg in $media_pkgs; do
-        if ! dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
-            missing="$missing $pkg"
-        fi
-    done
-
-    if [[ -z "$missing" ]]; then
-        ok "Media packages installed (vainfo, libvpl2, etc.)"
-        record "media-packages" "present" "none" "present" "PASS"
+    local before="missing"
+    if dpkg -l "$OMIX_DEV_PKG" 2>/dev/null | grep -q "^ii"; then
+        before="present"
+        ok "$OMIX_DEV_PKG already installed"
+        record "omix-dev" "$before" "none" "present" "PASS"
         return 0
     fi
 
-    local before="missing:$missing"
-
-    if ! should_install "media-packages"; then
-        info "Media packages missing — install skipped (filtered by --only/--skip)"
-        record "media-packages" "$before" "filtered-by-only" "incomplete" "FILTERED"
+    if [[ "$INCLUDE_DEV" != "true" ]] && ! is_explicitly_requested "omix-dev"; then
+        info "$OMIX_DEV_PKG not requested (pass --include-dev or --only omix-dev to install)"
+        record "omix-dev" "$before" "not-requested" "missing" "FILTERED"
         return 0
     fi
 
-    if ! is_ppa_configured && [[ "$DRY_RUN" != "true" ]]; then
-        fail "Intel GPU PPA is not configured — media packages require it."
-        fail "Re-run with: --only intel-ppa,media-packages"
-        record "media-packages" "$before" "missing-ppa" "incomplete" "FAIL"
+    if ! should_install "omix-dev"; then
+        info "$OMIX_DEV_PKG missing — install skipped (filtered by --only/--skip)"
+        record "omix-dev" "$before" "filtered-by-only" "missing" "FILTERED"
+        return 0
+    fi
+
+    if ! is_omix_repo_configured && [[ "$DRY_RUN" != "true" ]]; then
+        fail "Intel OMIX repo is not configured — $OMIX_DEV_PKG requires it."
+        fail "Re-run with: --only omix-repo,omix-dev"
+        record "omix-dev" "$before" "missing-repo" "missing" "FAIL"
         return 1
     fi
 
     if [[ "$DRY_RUN" != "true" ]]; then
-        if ! ask_confirm "Install media packages (VAAPI video encode/decode support)?"; then
-            info "Skipped media packages installation"
-            record "media-packages" "$before" "skipped-by-user" "incomplete" "SKIPPED"
+        if ! ask_confirm "Install Intel OMIX dev package ($OMIX_DEV_PKG: SYCL/oneMKL/oneDNN build headers)?"; then
+            info "Skipped $OMIX_DEV_PKG installation"
+            record "omix-dev" "$before" "skipped-by-user" "missing" "SKIPPED"
             return 0
         fi
     fi
 
-    info "Installing media packages:$missing"
+    info "Installing $OMIX_DEV_PKG..."
     need_sudo || return 1
-    # shellcheck disable=SC2086
-    run_or_dry sudo_cmd apt-get install -y -qq $media_pkgs
+    run_or_dry sudo_cmd apt-get install -y -qq "$OMIX_DEV_PKG"
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        record "media-packages" "$before" "would-install" "pending" "DRY-RUN"
-        return 0
-    fi
-
-    # Re-verify per-package — apt-get's exit code can be 0 even when an
-    # individual package was unavailable (silent skip on `Unable to locate`).
-    local still_missing=""
-    for pkg in $media_pkgs; do
-        if ! dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
-            still_missing="$still_missing $pkg"
-        fi
-    done
-
-    if [[ -z "$still_missing" ]]; then
-        ok "Media packages installed"
-        record "media-packages" "$before" "installed" "present" "PASS"
+        record "omix-dev" "$before" "would-install" "pending" "DRY-RUN"
+    elif dpkg -l "$OMIX_DEV_PKG" 2>/dev/null | grep -q "^ii"; then
+        ok "$OMIX_DEV_PKG installed"
+        record "omix-dev" "$before" "installed" "present" "PASS"
     else
-        fail "Media install incomplete — still missing:$still_missing"
-        record "media-packages" "$before" "install-incomplete" "missing:$still_missing" "FAIL"
+        fail "$OMIX_DEV_PKG install failed"
+        record "omix-dev" "$before" "install-failed" "missing" "FAIL"
     fi
 }
 
-# --- Component: PyTorch extras (libze-dev, intel-ocloc) ---
-# Per official docs: "if you plan to use PyTorch, install libze-dev and intel-ocloc additionally"
-PYTORCH_PACKAGES="libze-dev intel-ocloc"
+# --- Component: clinfo (OpenCL diagnostic CLI; standalone Ubuntu package) ---
+check_clinfo() {
+    info "Checking clinfo..."
 
-check_pytorch_extras() {
-    info "Checking PyTorch extras..."
-
-    local missing=""
-    for pkg in $PYTORCH_PACKAGES; do
-        if ! dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
-            missing="$missing $pkg"
-        fi
-    done
-
-    if [[ -z "$missing" ]]; then
-        ok "PyTorch extras installed (libze-dev, intel-ocloc)"
-        record "pytorch-extras" "present" "none" "present" "PASS"
+    local before="missing"
+    if command -v clinfo &>/dev/null; then
+        before="present"
+        ok "clinfo already installed"
+        record "clinfo" "$before" "none" "present" "PASS"
         return 0
     fi
 
-    local before="missing:$missing"
-
-    if ! should_install "pytorch-extras"; then
-        info "PyTorch extras missing — install skipped (filtered by --only/--skip)"
-        record "pytorch-extras" "$before" "filtered-by-only" "incomplete" "FILTERED"
+    if ! should_install "clinfo"; then
+        info "clinfo missing — install skipped (filtered by --only/--skip)"
+        record "clinfo" "$before" "filtered-by-only" "missing" "FILTERED"
         return 0
-    fi
-
-    if ! is_ppa_configured && [[ "$DRY_RUN" != "true" ]]; then
-        fail "Intel GPU PPA is not configured — PyTorch extras require it."
-        fail "Re-run with: --only intel-ppa,pytorch-extras"
-        record "pytorch-extras" "$before" "missing-ppa" "incomplete" "FAIL"
-        return 1
     fi
 
     if [[ "$DRY_RUN" != "true" ]]; then
-        if ! ask_confirm "Install PyTorch extras (libze-dev, intel-ocloc)?"; then
-            info "Skipped PyTorch extras installation"
-            record "pytorch-extras" "$before" "skipped-by-user" "incomplete" "SKIPPED"
+        if ! ask_confirm "Install clinfo (OpenCL diagnostic CLI)?"; then
+            info "Skipped clinfo installation"
+            record "clinfo" "$before" "skipped-by-user" "missing" "SKIPPED"
             return 0
         fi
     fi
 
-    info "Installing PyTorch extras:$missing"
+    info "Installing clinfo..."
     need_sudo || return 1
-    # shellcheck disable=SC2086
-    run_or_dry sudo_cmd apt-get install -y -qq $PYTORCH_PACKAGES
+    run_or_dry sudo_cmd apt-get install -y -qq clinfo
 
     if [[ "$DRY_RUN" == "true" ]]; then
-        record "pytorch-extras" "$before" "would-install" "pending" "DRY-RUN"
+        record "clinfo" "$before" "would-install" "pending" "DRY-RUN"
+    elif command -v clinfo &>/dev/null; then
+        ok "clinfo installed"
+        record "clinfo" "$before" "installed" "present" "PASS"
     else
-        local still_missing=""
-        for pkg in $PYTORCH_PACKAGES; do
-            if ! dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
-                still_missing="$still_missing $pkg"
-            fi
-        done
-        if [[ -z "$still_missing" ]]; then
-            ok "PyTorch extras installed"
-            record "pytorch-extras" "$before" "installed" "present" "PASS"
-        else
-            fail "PyTorch extras install incomplete — still missing:$still_missing"
-            record "pytorch-extras" "$before" "install-incomplete" "missing:$still_missing" "FAIL"
-        fi
+        fail "clinfo install failed"
+        record "clinfo" "$before" "install-failed" "missing" "FAIL"
     fi
 }
 
@@ -551,10 +555,11 @@ check_xpu_smi() {
         return 0
     fi
 
-    if ! is_ppa_configured && [[ "$DRY_RUN" != "true" ]]; then
-        fail "Intel GPU PPA is not configured — xpu-smi requires it."
-        fail "Re-run with: --only intel-ppa,xpu-smi"
-        record "xpu-smi" "$before" "missing-ppa" "missing" "FAIL"
+    # xpu-smi is published from the OMIX repo (repositories.intel.com).
+    if ! is_omix_repo_configured && [[ "$DRY_RUN" != "true" ]]; then
+        fail "Intel OMIX repo is not configured — xpu-smi requires it."
+        fail "Re-run with: --only omix-repo,xpu-smi"
+        record "xpu-smi" "$before" "missing-repo" "missing" "FAIL"
         return 1
     fi
 
@@ -831,7 +836,7 @@ run_verification() {
     # xpu-smi discovery
     if command -v xpu-smi &>/dev/null; then
         local gpu_count
-        gpu_count=$($run_as xpu-smi discovery 2>/dev/null | grep -c "Device ID" || true)
+        gpu_count=$($run_as xpu-smi discovery 2>/dev/null | grep -c "Device Name:" || true)
         gpu_count=${gpu_count:-0}
         if [[ "$gpu_count" -gt 0 ]]; then
             ok "Verification: xpu-smi sees $gpu_count GPU(s)"
@@ -849,15 +854,88 @@ run_verification() {
         ((warn_count++))
     fi
 
-    # Driver health (independent of group membership — uses sysfs)
+    # Driver health. xpu-smi 2.x removed the legacy diag subcommand.
     if command -v xpu-smi &>/dev/null; then
-        if $run_as xpu-smi diag --precheck &>/dev/null; then
-            ok "Verification: driver precheck passed"
+        if xpu-smi help 2>/dev/null | grep -qw diag; then
+            if $run_as xpu-smi diag --precheck &>/dev/null; then
+                ok "Verification: driver precheck passed"
+                ((pass++))
+            else
+                warn "Verification: driver precheck had warnings"
+                ((warn_count++))
+            fi
+        elif $run_as xpu-smi health -l &>/dev/null; then
+            ok "Verification: xpu-smi health check passed"
             ((pass++))
         else
-            warn "Verification: driver precheck had warnings"
+            warn "Verification: xpu-smi health telemetry is unsupported or unavailable"
             ((warn_count++))
         fi
+    fi
+
+    # SYCL compiler stack (part of the OMIX runtime install).
+    local oneapi_setvars="/opt/intel/oneapi/setvars.sh"
+    if [[ -f "$oneapi_setvars" ]]; then
+        local sycl_output sycl_record_counts intel_devices sycl_gpu_devices
+        sycl_output=$($run_as bash -c "source '$oneapi_setvars' >/dev/null 2>&1 && sycl-ls 2>/dev/null" || true)
+        sycl_record_counts=$(printf '%s\n' "$sycl_output" | awk '
+            function flush_record() {
+                if (!in_record) {
+                    return
+                }
+                if (record_intel) {
+                    intel++
+                }
+                if (record_intel && record_gpu) {
+                    intel_gpu++
+                }
+                in_record = 0
+                record_intel = 0
+                record_gpu = 0
+            }
+            NF == 0 {
+                flush_record()
+                next
+            }
+            /^\[/ {
+                flush_record()
+            }
+            {
+                in_record = 1
+                line = tolower($0)
+                if (line ~ /intel/) {
+                    record_intel = 1
+                }
+                if (line ~ /^\[[^]]*:gpu:[^]]*\]/ ||
+                    line ~ /^[[:space:]]*(device[[:space:]]+)?type[[:space:]]*:[[:space:]]*gpu([[:space:]]|$)/) {
+                    record_gpu = 1
+                }
+            }
+            END {
+                flush_record()
+                printf "%d %d\n", intel + 0, intel_gpu + 0
+            }
+        ' || true)
+        set -- $sycl_record_counts
+        intel_devices="${1:-0}"
+        sycl_gpu_devices="${2:-0}"
+        if [[ "$sycl_gpu_devices" -gt 0 ]]; then
+            ok "Verification: sycl-ls sees $sycl_gpu_devices Intel GPU device(s)"
+            ((pass++))
+        elif [[ "$visibility_relogin_pending" == "true" ]]; then
+            warn "Verification: sycl-ls sees 0 Intel GPU devices (expected — render group pending re-login)"
+            ((warn_count++))
+            needs_relogin=true
+        elif [[ "$intel_devices" -gt 0 ]]; then
+            fail "Verification: sycl-ls sees Intel devices but no Intel GPU devices"
+            ((fail_count++))
+        else
+            fail "Verification: sycl-ls sees no Intel GPU devices"
+            ((fail_count++))
+        fi
+    else
+        warn "Verification: $oneapi_setvars not found (skipping SYCL check — is intel-omix installed?)"
+        ((warn_count++))
     fi
 
     # Docker
@@ -962,9 +1040,9 @@ EOF
         "BLOCKED")
             cat >> "$SUMMARY" <<'EOF'
 Review failed components in the status table above. Common fixes:
-- Missing Intel PPA: Check network connectivity to repositories.intel.com
-- xpu-smi install failed: Ensure Intel GPU PPA is configured first
-- Docker failed: Check systemd service status (`systemctl status docker`)
+- Missing Intel OMIX repo: check network connectivity to repositories.intel.com
+- xpu-smi install failed: ensure omix-repo is configured first
+- Docker failed: check systemd service status (`systemctl status docker`)
 EOF
             ;;
     esac
@@ -982,12 +1060,12 @@ main() {
     info ""
 
     detect_gpu_type
-    detect_distro
+    detect_distro || exit 1
 
-    check_intel_ppa
-    check_compute_packages
-    check_media_packages
-    check_pytorch_extras
+    check_omix_repo
+    check_omix_runtime
+    check_omix_dev
+    check_clinfo
     check_xpu_smi
     check_groups
     check_docker

@@ -1,6 +1,6 @@
 ---
 name: xpu-system-setup
-description: "First-time setup for Intel XPU/GPU hosts. Detects what's missing and installs xpu-smi, configures user groups (render), sets up Intel GPU PPA repository, installs Level Zero runtime, installs Docker, and runs a post-setup verification gate. Prompts before each installation by default (use --auto for unattended). Also handles Battlemage (Arc Pro B60/B70) prerequisites on Ubuntu 24.04: nomodeset removal, OEM kernel upgrade, and compute runtime 26.18+ — use check_battlemage_prerequisites.sh when xpu-smi shows No device discovered or clinfo shows 0 platforms. Use when a bare-metal or minimally-configured machine needs to be prepared for XPU model work."
+description: "First-time setup for Intel XPU/GPU hosts. Installs the Intel OMIX (Open Middleware Xe) stack — Level Zero, OpenCL, SYCL compiler, oneMKL/oneDNN — plus clinfo, xpu-smi, user groups (render), and Docker, then runs a post-setup verification gate (including sycl-ls). Prompts before each installation by default (use --auto for unattended). Also handles Battlemage (Arc Pro B60/B70) kernel/runtime prerequisites: nomodeset removal and kernel/runtime upgrade guidance — use check_battlemage_prerequisites.sh when xpu-smi shows No device discovered or clinfo shows 0 platforms. Use when a bare-metal or minimally-configured machine needs to be prepared for XPU model work."
 ---
 
 # xpu-system-setup
@@ -10,6 +10,46 @@ Detects what's already configured and only installs what's missing.
 
 This is a **standalone skill** — it has no dependencies on other skills
 and can be run independently.
+
+## Source of Truth
+
+Everything in this skill about supported operating systems, supported
+GPUs, and Intel OMIX installation, upgrade, verification, and
+uninstallation procedures is derived from one live page:
+
+https://dgpu-docs.intel.com/installation-guides/installing-omix.html
+
+Treat every such fact in this file (tables, package names, supported
+codenames, the layer-by-layer instructions below) as a **cached
+summary, not the authority**. Before advising a user on any of these
+topics — what's supported, how to install, how to upgrade, how to
+verify, or how to uninstall — fetch that page and answer from its
+current content. If it has drifted from what's written here, say so
+and follow the live page.
+
+## Install path: Intel OMIX
+
+This skill installs **Intel OMIX (Open Middleware Xe)** — a single
+pinned bundle covering Level Zero, OpenCL, the SYCL/DPC++ compiler, and
+oneMKL/oneDNN — as its only install mechanism.
+
+**Do not also add the legacy per-package PPA
+(`ppa:kobuk-team/intel-graphics`) on a host this skill has set up.**
+Intel's OMIX docs explicitly call for "a clean system without
+preinstalled Intel GPU user-mode packages from the PPA" — mixing the
+two causes apt dependency conflicts (an exact-pinned OMIX dependency
+like `libze1` fighting a newer PPA-provided version of the same
+package). If a host already has PPA packages installed, remove them
+and the PPA repo first (see the PPA doc's Uninstallation section:
+https://dgpu-docs.intel.com/installation-guides/installing-packages-from-the-intel-ppa.html#uninstallation),
+*then* run this skill.
+
+The `intel-omix` runtime depends on `intel-gpu-compute`, which already
+includes `libze-dev`, `intel-ocloc`, Level Zero, OpenCL, and `xpu-smi`.
+Use `--include-dev` when full development headers and libraries are
+needed; it installs `intel-omix-dev` and its `intel-gpu-compute-dev`
+dependency. Media/VAAPI provisioning is outside this compute-focused
+skill.
 
 ## When To Use
 
@@ -21,7 +61,7 @@ Typical scenarios:
 - System is missing packages, user groups, or Docker needed for GPU work.
 - `xpu-smi discovery` shows "No device discovered" or `clinfo` reports 0
   platforms after a fresh install — common on Arc Pro B60/B70 (Battlemage)
-  with Ubuntu 24.04 stock kernel. Run `check_battlemage_prerequisites.sh`
+  with Ubuntu's stock kernel. Run `check_battlemage_prerequisites.sh`
   to diagnose and fix the underlying kernel/runtime issues, then re-run
   this skill.
 
@@ -39,7 +79,7 @@ the script installs system packages and modifies group membership.
 The script:
 1. Detects what's installed (idempotent — safe to re-run)
 2. Installs only what's missing (with prompts unless `--auto`)
-3. Runs the post-setup verification gate (6 checks)
+3. Runs the post-setup verification gate (7 checks)
 
 The raw commands shown in the table below are what the script runs
 internally — they are descriptive, not a manual checklist. Step 3 only
@@ -57,29 +97,30 @@ This still runs the full verification gate at the end.
 
 ## What It Covers
 
-Based on the official Intel GPU driver installation guide
-(https://dgpu-docs.intel.com/driver/client/overview.html):
+Based on https://dgpu-docs.intel.com/installation-guides/installing-omix.html:
 
-| Component | Check | What the script does if missing |
-|-----------|-------|---------------------------------|
-| Intel GPU PPA | `ppa:kobuk-team/intel-graphics` in apt sources | `add-apt-repository ppa:kobuk-team/intel-graphics` |
-| Compute packages | `libze-intel-gpu1 libze1 intel-metrics-discovery intel-opencl-icd clinfo intel-gsc` | `apt install` from PPA |
-| Media packages | `intel-media-va-driver-non-free libmfx-gen1[.2] libvpl2 libvpl-tools libva-glx2 va-driver-all vainfo` | `apt install` (VAAPI video; skip with `--skip media` on compute-only servers) |
-| PyTorch extras | `libze-dev intel-ocloc` | `apt install` (needed for PyTorch/XPU workloads) |
-| xpu-smi | `command -v xpu-smi` | `apt install xpu-smi` |
-| User groups | Current user in `render` | `gpasswd -a $TARGET_USER render` |
-| Docker | `command -v docker` + daemon reachable | Install via `get.docker.com` convenience script |
-| Docker group | Current user in `docker` group | `usermod -aG docker $USER` |
-
+| Component | Installed by default? | Check | What the script does if missing |
+|-----------|:---:|-------|---------------------------------|
+| OMIX repo | Yes | `intel-omix` in apt sources | Fetch GPG key, write `/etc/apt/sources.list.d/intel-gpu-<codename>.list` pointing at `intel-omix` (no version pin — always resolves the latest release for the codename) |
+| OMIX runtime | Yes | `dpkg -l intel-omix` | `apt install intel-omix` (Level Zero, OpenCL, SYCL compiler, oneMKL/oneDNN) |
+| clinfo | Yes | `command -v clinfo` | `apt install clinfo` (not bundled by OMIX) |
+| xpu-smi | Yes | `command -v xpu-smi` | Verify/install `xpu-smi` from the OMIX repo if the meta-package installation is incomplete |
+| User groups | Yes | Current user in `render` | `gpasswd -a $TARGET_USER render` |
+| Docker | Yes | `command -v docker` + daemon reachable | Install via `get.docker.com` convenience script |
+| Docker group | Yes | Current user in `docker` group | `usermod -aG docker $USER` |
+| OMIX dev | Opt-in (`--include-dev` or `--only omix-dev`) | `dpkg -l intel-omix-dev` | `apt install intel-omix-dev` (SYCL/oneMKL/oneDNN build headers) |
 
 ## Quick Start
 
 ```sh
-# Interactive mode (default) — prompts before each installation
+# Interactive mode (default) — prompts before each step
 plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh
 
 # Auto mode — install all without prompts (requires sudo)
 plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --auto
+
+# Also install the OMIX dev package (SYCL/oneMKL/oneDNN build headers)
+plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --auto --include-dev
 
 # Dry-run — show what would be done without changing anything
 plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --dry-run
@@ -89,9 +130,6 @@ plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh 
 
 # Skip Docker install (e.g., if using podman)
 plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --skip docker
-
-# Skip media packages (compute-only server)
-plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh --skip media
 ```
 
 **Interactive vs Auto Mode:**
@@ -116,8 +154,11 @@ After setup, the script runs a verification gate:
 2. `id -nG` — user is in render group (active in current session)
 3. `clinfo` — Intel OpenCL devices detected
 4. `xpu-smi discovery` — Intel GPUs visible
-5. `xpu-smi diag --precheck` — driver health check
-6. `docker info` — Docker daemon reachable
+5. `xpu-smi diag --precheck` (or `xpu-smi health -l` on newer xpu-smi
+   releases that dropped `diag`) — driver health check
+6. `source /opt/intel/oneapi/setvars.sh && sycl-ls` — SYCL compiler sees
+   Intel GPU device(s), not just an Intel CPU backend
+7. `docker info` — Docker daemon reachable
 
 If verification requires a re-login (group changes), the script
 reports `READY AFTER RELOGIN` and prints the command to verify
@@ -134,7 +175,7 @@ nothing was installed**:
    runs, and `--dry-run` to preview without changing anything. Name
    these so the user knows how to drive a real install.
 2. **Verification gate** — report the result of the post-setup
-   verification gate (the 6-check gate above). If you ran `--dry-run`
+   verification gate (the 7-check gate above). If you ran `--dry-run`
    on an already-configured host, say the verification gate would run
    at the end of a real invocation and summarize the detected state.
 
@@ -142,24 +183,56 @@ Do not reduce the answer to a bare "already installed / nothing to
 do" table — the mode explanation and the verification-gate result
 must appear regardless of host state.
 
+## Keeping this current
+
+Supported Ubuntu codenames and the GPG key URL are **not fetched live at
+runtime** — they are constants declared near the top of
+`scripts/setup_xpu_system.sh` (`OMIX_CODENAMES`, `OMIX_GPG_KEY_URL`,
+`OMIX_RUNTIME_PKG`, `OMIX_DEV_PKG`), each tagged with the date they were
+last checked. The repo line itself omits the version segment
+(`.../intel-omix unified`, not `.../intel-omix/<series> unified`), so apt
+always resolves the latest OMIX release compliant with the detected codename
+— there is no version constant to keep in sync. The OMIX doc has changed its
+content between revisions before, so **always fetch this page and reconcile
+before relying on this skill** (see "Source of Truth" above) — do not wait
+for an install failure, a missing package, or the distro-codename warning
+to prompt the check:
+
+https://dgpu-docs.intel.com/installation-guides/installing-omix.html
+
+- Supported Ubuntu codenames — the doc's own install snippet embeds them:
+  `if [[ ! " <codenames> " =~ " ${VERSION_CODENAME} " ]]` → maps to
+  `OMIX_CODENAMES`.
+- GPG key URL — `https://repositories.intel.com/gpu/intel-graphics.key`
+  (Intel rotates signing keys periodically) → maps to `OMIX_GPG_KEY_URL`.
+- Package names — confirm `intel-omix` (runtime) and `intel-omix-dev`
+  (dev) are still named this way → maps to `OMIX_RUNTIME_PKG` /
+  `OMIX_DEV_PKG`.
+- Version pinning — confirm the doc still documents that omitting the
+  version segment installs the latest release; if Intel changes that
+  default behavior, this script's repo-line construction needs updating too.
+
+If any of these have drifted from what's declared in the script, update
+the constants (and the "last verified" date comment next to them)
+before running the skill, and mention the drift to the user. The setup
+script now stops before installing anything when the detected Ubuntu
+codename is not in `OMIX_CODENAMES`, so this reconciliation step has to
+happen before a newly-supported release can be installed.
+
 ## Supported Hardware
 
-**Intel client discrete GPUs:**
+**Intel client discrete GPUs:** Arc, Arc Pro (all generations, including
+Battlemage B-series) — per the last-verified OMIX doc content. This list
+changes as Intel validates new cards; fetch the live doc (see "Source of
+Truth" above) rather than treating this line as exhaustive.
 
-This skill installs drivers from the Intel client GPU PPA
-(`ppa:kobuk-team/intel-graphics`) which supports Intel Arc discrete GPUs
-(all generations including Arc Pro).
+## Battlemage (Arc Pro B60/B70) Prerequisites
 
-For the complete list of supported hardware, see:
-https://dgpu-docs.intel.com/driver/client/overview.html
-
-## Battlemage (Arc Pro B60/B70) Prerequisites on Ubuntu 24.04
-
-On Ubuntu 24.04 with the stock GA kernel (6.8), Battlemage GPUs
-(`0xe211` Arc Pro B60, `0xe223` Arc Pro B70) have three silent failure
-modes that prevent `xpu-smi`, `clinfo`, and `torch.xpu` from seeing any
-devices — even after this skill completes successfully. All three must be
-fixed before re-running this skill.
+On Ubuntu with the stock GA kernel, Battlemage GPUs (`0xe211` Arc Pro
+B60, `0xe223` Arc Pro B70) have three silent failure modes that prevent
+`xpu-smi`, `clinfo`, and `torch.xpu` from seeing any devices — even
+after this skill completes successfully. All three must be fixed before
+re-running this skill.
 
 **Quick diagnosis:**
 
@@ -182,70 +255,67 @@ sudo sed -i 's/\bnomodeset\b//g' /etc/default/grub
 sudo update-grub && sudo reboot
 ```
 
-**Layer 2 — Upgrade to OEM kernel 6.17**
+**Layer 2 — Upgrade the kernel**
 
-The Ubuntu 24.04 GA kernel (6.8) has no PCI alias for `0xe223`/`0xe211`
-in the `xe` module — the driver will not bind even without `nomodeset`.
+The stock GA kernel on some Ubuntu releases has no PCI alias for
+`0xe223`/`0xe211` in the `xe` module — the driver will not bind even
+without `nomodeset`.
 
 ```sh
 modinfo xe | grep -E 'd0000[Ee]2(11|23)'   # empty = kernel too old
-sudo apt install -y linux-oem-24.04
+# Install the newest HWE or OEM kernel available for your Ubuntu release, then:
 sudo reboot
 # After reboot: dmesg | grep -i battlemage  →  "Found battlemage (device ID e223)"
 ```
 
-Ubuntu HWE kernel 6.11+ also works; OEM 6.17 is preferred for Arc Pro
-because it ships matching GuC/HuC firmware blobs.
+No specific kernel package or version number is asserted here — Intel's
+OMIX install guide does not document one (see "Source of Truth" above).
+`check_battlemage_prerequisites.sh` trusts the live `modinfo` alias
+check and driver-binding state instead of a hardcoded package name or
+version threshold.
 
 **Layer 3 — Run `xpu-system-setup`**
 
-The Intel GPU client repo (`repositories.intel.com`) ships runtime 24.39
-which does not recognise Battlemage (`device_family: unknown`).
-`clinfo` reports 0 platforms. `xpu-system-setup` adds the kobuk-team PPA
-which ships runtime 26.18+ — simply running this skill installs the correct
-version automatically.
-
-If you installed packages from the Intel client repo *before* running
-`xpu-system-setup`, the kobuk-team PPA will upgrade them on the next run.
-You can also upgrade explicitly:
+Older Intel GPU repos can ship a compute runtime that predates
+Battlemage support (`device_family: unknown`, `clinfo` reports 0
+platforms). Running this skill installs a current-enough runtime via
+OMIX automatically — verify with:
 
 ```sh
-sudo apt-get install -y --only-upgrade \
-  libze-intel-gpu1 intel-opencl-icd xpu-smi
 clinfo | grep "Number of platforms"   # should be 1
 xpu-smi discovery                     # should show Arc Pro B60/B70
 ```
 
-**Offline environments:** If the PPA is unreachable, download runtime 26.18
-directly from the [Intel compute-runtime GitHub releases](https://github.com/intel/compute-runtime/releases/tag/26.18.38308.1)
-and the [Intel graphics compiler releases](https://github.com/intel/intel-graphics-compiler/releases/tag/v2.34.4),
+If a host has packages from an older/different Intel GPU repo (or the
+legacy PPA) installed *before* running `xpu-system-setup`, remove them
+first — see "Install path: Intel OMIX" above for why mixing repos
+causes dependency conflicts.
+
+**Offline environments:** If the OMIX repo is unreachable, download the
+compute runtime directly from the
+[Intel compute-runtime GitHub releases](https://github.com/intel/compute-runtime/releases)
+and the
+[Intel graphics compiler releases](https://github.com/intel/intel-graphics-compiler/releases),
 then install with `dpkg -i`.
 
 **PCIe topology note:** `lspci` shows x1 downstream ports below the B70.
 This is not a slot wiring problem — the B70 has an on-card PCIe switch
 (`0xe2ff`) between the host link and the GPU die. On capable platforms
 the host-to-GPU link negotiates PCIe 5.0 x16; verify with
-`xpu-smi diag -d 0 --singletest 5`.
+`xpu-smi diag -d 0 --singletest 5` (older xpu-smi) or
+`xpu-smi listpciinfo` (xpu-smi 2.x, which dropped `diag`'s `--singletest`).
 
 ## Supported Distributions
 
-- **Ubuntu 24.04 LTS (Noble Numbat)**
-- **Ubuntu 25.10 (Oracular Oriole)**
+Ubuntu only, codenames per the live OMIX doc content (see "Source of
+Truth" above) — currently cached in `OMIX_CODENAMES`
+(e.g. `noble` = 24.04, `resolute` = 26.04). Fetch the live doc rather
+than treating this cached list as exhaustive or permanent.
 
-Per the official Intel documentation, the `ppa:kobuk-team/intel-graphics` PPA
-supports Ubuntu 24.04 and 25.10. Ubuntu 25.10 provides native support for
-recent Intel graphics including Battlemage. Ubuntu 24.04 supports newer GPUs
-with the HWE (hardware enablement) kernel.
-
-**Note:** Ubuntu 22.04 uses a different installation method (not this PPA).
-See https://dgpu-docs.intel.com/driver/client/overview.html for Ubuntu 22.04 instructions.
-
-This skill uses the Intel client GPU PPA (`ppa:kobuk-team/intel-graphics`),
-which is Ubuntu-specific. Debian and other distributions require different
-installation methods and are not supported by this skill.
-
-For Debian or other distros, install drivers manually following:
-https://dgpu-docs.intel.com/driver/client/overview.html
+Ubuntu 22.04 requires a different installation method not covered by
+this skill; Debian and other distributions require different
+installation methods entirely — see the OMIX doc's introduction for
+pointers.
 
 ## What This Skill Does (Standalone)
 
@@ -253,9 +323,10 @@ This skill performs one-time system-level setup. It installs packages,
 configures user groups, and prepares Docker. After running this skill,
 your system will have:
 
-- Intel GPU PPA configured
-- GPU compute packages installed (Level Zero, OpenCL)
-- xpu-smi tool installed
+- Intel OMIX repo configured
+- `intel-omix` installed (Level Zero, OpenCL, SYCL compiler, oneMKL/oneDNN)
+- `intel-omix-dev` installed, if `--include-dev` was passed
+- `clinfo` and `xpu-smi` installed
 - User added to `render` group for GPU access
 - Docker installed and configured (optional)
 
@@ -263,6 +334,22 @@ This is system provisioning — you run it once on a fresh machine.
 For runtime checks, GPU discovery, or running workloads, those are
 handled by other tools or skills, but this skill has no dependencies
 on them.
+
+## Upgrading Intel OMIX
+
+`setup_xpu_system.sh` only performs first-time installs — it does not
+upgrade an existing Intel OMIX install. Do not invent `apt-get
+install --only-upgrade` commands from memory: fetch the live doc's
+Upgrade section (see "Source of Truth" above) and follow it as
+written, since the repo line and package names it gives can change
+between revisions.
+
+## Uninstalling Intel OMIX
+
+This skill has no uninstall path. If a user asks to remove Intel OMIX,
+fetch the live doc's Uninstallation section (see "Source of Truth"
+above) rather than guessing `apt remove` targets — it names the exact
+runtime/dev packages to remove and the `apt autoremove` follow-up.
 
 ## Important Notes
 
@@ -272,8 +359,10 @@ on them.
   This gives you a subshell with the render group active; `exit` returns
   to the original shell. For permanent activation across all future
   sessions, log out and log back in.
-- The Intel GPU PPA (`ppa:kobuk-team/intel-graphics`) is the official
-  Intel-maintained PPA per https://dgpu-docs.intel.com/driver/client/overview.html.
+- Do not add the legacy PPA (`ppa:kobuk-team/intel-graphics`) alongside
+  OMIX on the same host — see "Install path: Intel OMIX" above.
 - Docker install uses the official convenience script from
   `get.docker.com`. For air-gapped environments, pre-install Docker
   and use `--skip docker`.
+
+

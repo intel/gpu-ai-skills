@@ -140,17 +140,20 @@ template/              # SKILL.md template for contributors
 
 The `agents/AGENTS.md` bundle is generated from the individual `SKILL.md` files; re-run `scripts/` tooling after adding a skill to keep it fresh.
 
-### Ubuntu 24.04 + Arc Pro B60/B70 (Battlemage)
+### Arc Pro B60/B70 (Battlemage)
 
-On Ubuntu 24.04 with the stock kernel, Battlemage GPUs require three
+On Ubuntu with the stock kernel, Battlemage GPUs require three
 prerequisites before the skills work. Run the diagnostic first:
 
 ```sh
 bash plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/check_battlemage_prerequisites.sh
 ```
 
-It checks for `nomodeset` in GRUB, the OEM kernel 6.17 requirement, and
-compute runtime >=26.18. Pass `--fix` to apply remediations, or follow
+It checks for `nomodeset` in GRUB, whether the running kernel has a PCI
+alias for the Battlemage device ID, and whether the compute runtime is
+functional (via `clinfo`/`xpu-smi`) — no specific kernel package or
+runtime version number is hardcoded, since Intel's OMIX install guide
+doesn't document one. Pass `--fix` to apply remediations, or follow
 the steps in `plugins/intel-gpu-ai-skills/skills/xpu-system-setup/SKILL.md`
 → **Battlemage Prerequisites**.
 

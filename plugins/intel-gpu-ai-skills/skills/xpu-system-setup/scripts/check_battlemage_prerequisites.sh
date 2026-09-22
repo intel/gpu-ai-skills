@@ -42,7 +42,11 @@ Usage: check_battlemage_prerequisites.sh [--fix | --dry-run]
 In check mode the script is completely read-only.
 --fix aborts if run non-interactively (stdin not a terminal).
 
-Target hardware: Intel Arc Pro B60 (0xe211) / B70 (0xe223) on Ubuntu 24.04+.
+Target hardware: Intel Arc Pro B60 (0xe211) / B70 (0xe223).
+Kernel and runtime remediation below is generic (no specific kernel
+package or runtime version number is asserted) -- Intel's OMIX install
+guide does not document either, so this script trusts live signals
+(modinfo, clinfo, xpu-smi) instead of a hardcoded version threshold.
 EOF
 }
 
@@ -102,9 +106,19 @@ run_fix() {
     fi
 }
 
+# ── Distro detection (informational only) ───────────────────────────────────
+DISTRO_ID="unknown"
+DISTRO_VERSION_ID="unknown"
+if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    DISTRO_ID="${ID:-unknown}"
+    DISTRO_VERSION_ID="${VERSION_ID:-unknown}"
+fi
+
 # ── Banner ────────────────────────────────────────────────────────────────────
 printf '\n%b\n' "${BOLD}═══ Battlemage (Arc Pro B60/B70) Prerequisites Check ═══${NC}"
-printf 'Mode: %s\n\n' "$MODE"
+printf 'Mode: %s | Distro: %s %s\n\n' "$MODE" "$DISTRO_ID" "$DISTRO_VERSION_ID"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Layer 0 — Hardware presence
@@ -195,7 +209,7 @@ elif [ "$BOUND_COUNT" -gt 0 ]; then
     info "xe not in lsmod — likely built-in to kernel $KERNEL (driver is working)"
 else
     warn "xe not in lsmod and no GPUs bound — kernel may not support Battlemage"
-    info "Recommended kernel: 6.11 HWE or 6.17 OEM (sudo apt install linux-oem-24.04)"
+    info "A newer kernel is likely needed — no specific package/version is asserted here; see Layer 2 remediation below"
     NEED_KERNEL=true
 fi
 
@@ -207,8 +221,8 @@ if [ "$XE_HAS_BMG" -eq 0 ]; then
         # Built-in or alias not needed — driver is working
         info "xe module has no Battlemage alias in modinfo (built-in path — OK since GPUs are bound)"
     else
-        warn "xe module on kernel $KERNEL has no Battlemage alias — upgrade recommended"
-        info "Recommended: sudo apt install linux-oem-24.04"
+        warn "xe module on kernel $KERNEL has no Battlemage alias — kernel upgrade recommended"
+        info "No specific kernel package/version is asserted here; see Layer 2 remediation below"
         NEED_KERNEL=true
     fi
 else
@@ -223,12 +237,14 @@ printf '\n%b\n' "${BOLD}── Layer 3: Compute Runtime ──${NC}"
 LAYER3_OK=true
 OPENCL_PLATFORMS=0
 
-# Check kobuk-team PPA is configured (needed for --fix runtime upgrade)
-# Filter commented-out lines to avoid false positives
-PPA_CONFIGURED=false
-if grep -Rhs 'kobuk-team/intel-graphics' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
+# Check the Intel OMIX repo is configured (needed for --fix runtime upgrade).
+# Also recognizes the legacy kobuk-team PPA in case a host still has it from
+# before xpu-system-setup switched to OMIX-only. Filter commented-out lines
+# to avoid false positives.
+REPO_CONFIGURED=false
+if grep -Rhs -E 'kobuk-team/intel-graphics|intel-omix' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
     | grep -vE '^[[:space:]]*#' | grep -q .; then
-    PPA_CONFIGURED=true
+    REPO_CONFIGURED=true
 fi
 
 # Live OpenCL check is the ground truth — check this first.
@@ -249,29 +265,13 @@ else
     warn "clinfo not installed — skipping live OpenCL check (install with: sudo apt install clinfo)"
 fi
 
-# Version check is advisory: warn if below 26.18 on Ubuntu 24.04 only when GPU is NOT working.
-# On Ubuntu 25.10 and other distros the version numbering differs; trust clinfo over version.
+# Runtime version is informational only. No specific minimum version is
+# asserted here -- Intel's OMIX doc does not document one -- so clinfo above
+# (and xpu-smi discovery below) is the ground truth for whether the runtime
+# actually works, not the installed package's version number.
 if dpkg -s intel-opencl-icd &>/dev/null; then
     RUNTIME_VERSION=$(dpkg -s intel-opencl-icd 2>/dev/null | grep '^Version:' | awk '{print $2}')
     info "intel-opencl-icd installed: $RUNTIME_VERSION"
-
-    # Strip epoch prefix (e.g. "1:26.18..." -> "26.18...") before parsing
-    RUNTIME_PLAIN=$(printf '%s' "$RUNTIME_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-    MAJOR=$(printf '%s' "${RUNTIME_PLAIN:-0}" | cut -d. -f1)
-    MINOR=$(printf '%s' "${RUNTIME_PLAIN:-0.0}" | cut -d. -f2)
-    if [ "$MAJOR" -lt 26 ] || { [ "$MAJOR" -eq 26 ] && [ "$MINOR" -lt 18 ]; }; then
-        if [ "${OPENCL_PLATFORMS:-0}" -gt 0 ]; then
-            # GPU is working — this is a recommendation, not a failure
-            warn "Runtime $RUNTIME_VERSION is below the Ubuntu 24.04 recommended version (26.18+) but GPU is operational. Consider upgrading via xpu-system-setup for latest fixes."
-        else
-            # GPU not working AND runtime is old — likely cause
-            fail "Compute runtime $RUNTIME_VERSION does not support Battlemage on Ubuntu 24.04 (need >=26.18)"
-            NEED_RUNTIME=true
-            LAYER3_OK=false
-        fi
-    else
-        pass "Compute runtime $RUNTIME_VERSION >= 26.18"
-    fi
 else
     if [ "${OPENCL_PLATFORMS:-0}" -gt 0 ]; then
         warn "intel-opencl-icd package not found via dpkg but clinfo shows GPU — may be installed outside apt"
@@ -298,7 +298,7 @@ if command -v xpu-smi &>/dev/null; then
         XPU_SMI_MINOR=$(printf '%s' "$XPU_SMI_VER" | cut -d. -f2)
         if [ "$XPU_SMI_MAJOR" -lt 1 ] \
             || { [ "$XPU_SMI_MAJOR" -eq 1 ] && [ "$XPU_SMI_MINOR" -lt 3 ]; }; then
-            warn "xpu-smi $XPU_SMI_VER may not enumerate B70 (1.3+ recommended from kobuk-team PPA)"
+            warn "xpu-smi $XPU_SMI_VER may not enumerate B70 (1.3+ recommended; install via xpu-system-setup)"
         else
             pass "xpu-smi version $XPU_SMI_VER >= 1.3"
             DISCOVERY=$(xpu-smi discovery 2>/dev/null || true)
@@ -311,7 +311,7 @@ if command -v xpu-smi &>/dev/null; then
         fi
     fi
 else
-    fail "xpu-smi not installed — install xpu-smi >= 1.3 from the kobuk-team PPA"
+    fail "xpu-smi not installed — install xpu-smi >= 1.3 via xpu-system-setup"
     NEED_RUNTIME=true
     LAYER3_OK=false
 fi
@@ -352,29 +352,25 @@ fi
 
 # ── Fix: Layer 2 — kernel upgrade ────────────────────────────────────────────
 if $NEED_KERNEL; then
-    printf '%b Upgrade to OEM kernel 6.17 (adds xe PCI aliases for 0xe223/0xe211):\n' "$BOLD"
-    printf '    sudo apt install -y linux-oem-24.04\n'
-    printf '    sudo reboot\n\n'
-    if [ "$MODE" = fix ]; then
-        if confirm "Install linux-oem-24.04 now?"; then
-            run_fix "apt-get install linux-oem-24.04" \
-                env DEBIAN_FRONTEND=noninteractive apt-get install -y linux-oem-24.04
-            printf '%b OEM kernel installed. A reboot is required before continuing.\n' "$PASS"
-            confirm "Reboot now?" && reboot
-        fi
-    elif [ "$MODE" = dryrun ]; then
-        dryrun_note "apt-get install -y linux-oem-24.04"
+    printf '%b Kernel upgrade needed (no PCI alias/binding for this Battlemage GPU on the running kernel):\n' "$BOLD"
+    printf '  No specific kernel package or version is asserted here — Intel'"'"'s OMIX\n'
+    printf '  install guide does not document one. Install the newest HWE or OEM kernel\n'
+    printf '  available for %s %s, reboot, then re-run this script:\n' "$DISTRO_ID" "$DISTRO_VERSION_ID"
+    printf '  https://dgpu-docs.intel.com/installation-guides/installing-omix.html\n\n'
+    if [ "$MODE" = fix ] || [ "$MODE" = dryrun ]; then
+        printf '%b No automatic kernel remediation available — resolve manually and reboot.\n' "$WARN"
     fi
 fi
 
 # ── Fix: Layer 3 — runtime upgrade ───────────────────────────────────────────
 if $NEED_RUNTIME; then
-    printf '%b Install compute runtime >=26.18 via xpu-system-setup:\n' "$BOLD"
+    printf '%b Install the latest compute runtime via xpu-system-setup:\n' "$BOLD"
     printf '    bash scripts/setup_xpu_system.sh --auto\n\n'
-    printf '  The kobuk-team PPA (added by xpu-system-setup) ships runtime 26.18+\n'
-    printf '  and will upgrade any previously installed Intel client repo packages.\n\n'
+    printf '  This adds the Intel OMIX repo (repositories.intel.com), which always\n'
+    printf '  resolves the latest release for your Ubuntu codename, and will upgrade\n'
+    printf '  any previously installed Intel GPU packages.\n\n'
     if [ "$MODE" = fix ]; then
-        if $PPA_CONFIGURED; then
+        if $REPO_CONFIGURED; then
             if confirm "Install or upgrade libze-intel-gpu1, intel-opencl-icd, and xpu-smi now?"; then
                 run_fix "apt-get install runtime" \
                     env DEBIAN_FRONTEND=noninteractive \
@@ -382,14 +378,14 @@ if $NEED_RUNTIME; then
                 printf '%b Runtime packages installed/upgraded. Re-run this script to verify.\n' "$PASS"
             fi
         else
-            printf '%b kobuk-team PPA not yet configured — run xpu-system-setup first:\n' "$WARN"
+            printf '%b No Intel GPU repo configured yet — run xpu-system-setup first:\n' "$WARN"
             printf '    bash scripts/setup_xpu_system.sh --auto\n\n'
         fi
     elif [ "$MODE" = dryrun ]; then
-        if $PPA_CONFIGURED; then
+        if $REPO_CONFIGURED; then
             dryrun_note "apt-get install -y libze-intel-gpu1 intel-opencl-icd xpu-smi"
         else
-            printf '%b  DRY-RUN: kobuk-team PPA not configured — would need to run setup_xpu_system.sh first\n' \
+            printf '%b  DRY-RUN: no Intel GPU repo configured — would need to run setup_xpu_system.sh first\n' \
                 "${YELLOW}»${NC}"
         fi
     fi
