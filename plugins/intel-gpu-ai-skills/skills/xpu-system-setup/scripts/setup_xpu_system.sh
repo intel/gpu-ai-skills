@@ -18,13 +18,13 @@ TARGET_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
 TARGET_HOME="${TARGET_HOME:-$HOME}"
 OUT_DIR="${TARGET_HOME}/.out/skills/xpu-system-setup"
 
-# Intel OMIX (Open Middleware Xe) is the sole install path: a single pinned
-# bundle of Level Zero, OpenCL, the SYCL compiler, and oneMKL/oneDNN. Do not
-# also add the legacy per-package PPA (ppa:kobuk-team/intel-graphics) on the
-# same host -- Intel's OMIX docs call for "a clean system without preinstalled
-# Intel GPU user-mode packages from the PPA", and mixing them causes apt
-# dependency conflicts (an OMIX-pinned package fighting a newer PPA version
-# of the same package).
+# Intel OMIX (Open Middleware Xe) is the sole install path: a bundle of
+# Level Zero, OpenCL, the SYCL compiler, and oneMKL/oneDNN. Do not also add
+# the legacy per-package PPA (ppa:kobuk-team/intel-graphics) on the same host
+# -- Intel's OMIX docs call for "a clean system without preinstalled Intel
+# GPU user-mode packages from the PPA", and mixing them causes apt dependency
+# conflicts (an OMIX-pinned package fighting a newer PPA version of the same
+# package).
 INCLUDE_DEV=false
 
 # --- Facts sourced from dgpu-docs.intel.com ---
@@ -36,7 +36,10 @@ INCLUDE_DEV=false
 # in SKILL.md for exactly what to check and where.
 OMIX_DOC_URL="https://dgpu-docs.intel.com/installation-guides/installing-omix.html"
 OMIX_CODENAMES="resolute noble"                 # Ubuntu codenames OMIX doc lists as supported
-OMIX_VERSION_SERIES="0.3"                        # .../intel-omix/<series> in the repo line
+# No version segment is written into the repo line (.../intel-omix unified,
+# not .../intel-omix/<series> unified) -- per the OMIX doc, omitting the
+# version always resolves the latest release compliant with the detected
+# codename, so this never goes stale like a hardcoded series would.
 OMIX_GPG_KEY_URL="https://repositories.intel.com/gpu/intel-graphics.key"
 OMIX_RUNTIME_PKG="intel-omix"
 OMIX_DEV_PKG="intel-omix-dev"
@@ -129,7 +132,61 @@ record() {
 }
 
 is_omix_repo_configured() {
-    grep -rls "intel-omix" /etc/apt/sources.list.d/ 2>/dev/null | grep -q .
+    local deb822_files=()
+    # Match an active apt source for the exact detected codename. A bare
+    # "intel-omix" substring also matches commented-out entries or notes
+    # copied into list files, which would falsely report "configured" and
+    # skip repo setup. Only live binary `deb` entries count here: `deb-src`
+    # alone cannot satisfy `apt install intel-omix`.
+    if grep -RhsE '^[[:space:]]*deb[[:space:]]+' /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null \
+        | awk -v codename="$DISTRO_CODENAME" '
+            {
+                line = $0
+                sub(/^[[:space:]]*deb[[:space:]]+/, "", line)
+                sub(/^\[[^]]+\][[:space:]]+/, "", line)
+                if (line ~ "^https?://repositories\\.intel\\.com/gpu/ubuntu/?[[:space:]]+" codename "/intel-omix[[:space:]]+unified([[:space:]]+.*)?$") {
+                    found = 1
+                    exit
+                }
+            }
+            END {
+                exit !found
+            }
+        '; then
+        return 0
+    fi
+
+    if grep -qE '^[[:space:]]*(Types|URIs|Suites|Components):' /etc/apt/sources.list 2>/dev/null; then
+        deb822_files+=("/etc/apt/sources.list")
+    fi
+
+    if compgen -G "/etc/apt/sources.list.d/*.sources" >/dev/null; then
+        deb822_files+=(/etc/apt/sources.list.d/*.sources)
+    fi
+
+    if [[ "${#deb822_files[@]}" -gt 0 ]]; then
+        awk -v codename="$DISTRO_CODENAME" '
+            BEGIN {
+                RS = ""
+                IGNORECASE = 1
+            }
+            {
+                block = tolower($0)
+                if (block ~ /(^|\n)types:[^\n]*([[:space:]]|^)deb([[:space:]]|$)/ &&
+                    block ~ /(^|\n)uris:[^\n]*https?:\/\/repositories\.intel\.com\/gpu\/ubuntu\/?([[:space:]]|$)/ &&
+                    block ~ "(^|\n)suites:[^\n]*" tolower(codename) "/intel-omix([[:space:]]|$)" &&
+                    block ~ /(^|\n)components:[^\n]*([[:space:]]|^)unified([[:space:]]|$)/) {
+                    found = 1
+                    exit
+                }
+            }
+            END {
+                exit !found
+            }
+        ' "${deb822_files[@]}" 2>/dev/null && return 0
+    fi
+
+    return 1
 }
 
 # Component aliases — short forms users may pass to --only / --skip.
@@ -264,7 +321,7 @@ detect_distro() {
         fail "Unsupported distribution: $DISTRO_ID $DISTRO_VERSION"
         fail "This skill requires Ubuntu; supported versions are verified against dgpu-docs.intel.com."
         fail "For other distros, see: https://dgpu-docs.intel.com/installation-guides/index.html"
-        exit 1
+        return 1
     fi
 
     # Supported-codename list is the OMIX_CODENAMES constant declared near
@@ -273,15 +330,15 @@ detect_distro() {
     # since the doc's supported-version list has changed over time.
     info "Supported codenames per OMIX doc: $OMIX_CODENAMES"
     if [[ " $OMIX_CODENAMES " != *" $DISTRO_CODENAME "* ]]; then
-        warn "Ubuntu codename '$DISTRO_CODENAME' ($DISTRO_VERSION) is not in the last-verified OMIX supported list ($OMIX_CODENAMES)"
-        warn "OMIX install may fail or behave unexpectedly; re-verify against $OMIX_DOC_URL"
+        fail "Ubuntu codename '$DISTRO_CODENAME' ($DISTRO_VERSION) is not in the last-verified OMIX supported list ($OMIX_CODENAMES). Re-check $OMIX_DOC_URL and update OMIX_CODENAMES before running this installer on this release."
+        return 1
     fi
     info "Detected: $DISTRO_ID $DISTRO_VERSION ($DISTRO_CODENAME)"
 }
 
 # --- Component: OMIX repo (sole install path) ---
 check_omix_repo() {
-    info "Checking Intel OMIX repo (intel-omix/$OMIX_VERSION_SERIES)..."
+    info "Checking Intel OMIX repo (intel-omix, latest release)..."
 
     local before="missing"
     if is_omix_repo_configured; then
@@ -298,7 +355,7 @@ check_omix_repo() {
     fi
 
     if [[ "$DRY_RUN" != "true" ]]; then
-        if ! ask_confirm "Add Intel OMIX repo (intel-omix/$OMIX_VERSION_SERIES) and GPG key?"; then
+        if ! ask_confirm "Add Intel OMIX repo (intel-omix, latest release) and GPG key?"; then
             info "Skipped Intel OMIX repo setup"
             record "omix-repo" "$before" "skipped-by-user" "missing" "SKIPPED"
             return 0
@@ -318,7 +375,8 @@ check_omix_repo() {
     fi
 
     wget -qO - "$OMIX_GPG_KEY_URL" | sudo_cmd gpg --yes --dearmor --output /usr/share/keyrings/intel-graphics.gpg
-    local repo_line="deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${DISTRO_CODENAME}/intel-omix/${OMIX_VERSION_SERIES} unified"
+    # No version segment -- apt resolves the latest OMIX release compliant with $DISTRO_CODENAME.
+    local repo_line="deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.gpg] https://repositories.intel.com/gpu/ubuntu ${DISTRO_CODENAME}/intel-omix unified"
     echo "$repo_line" | sudo_cmd tee "/etc/apt/sources.list.d/intel-gpu-${DISTRO_CODENAME}.list" >/dev/null
     sudo_cmd apt-get update -qq
 
@@ -818,17 +876,61 @@ run_verification() {
     # SYCL compiler stack (part of the OMIX runtime install).
     local oneapi_setvars="/opt/intel/oneapi/setvars.sh"
     if [[ -f "$oneapi_setvars" ]]; then
-        local sycl_devices
-        sycl_devices=$($run_as bash -c "source '$oneapi_setvars' >/dev/null 2>&1 && sycl-ls 2>/dev/null" | grep -ci "intel" || true)
-        if [[ "$sycl_devices" -gt 0 ]]; then
-            ok "Verification: sycl-ls sees $sycl_devices Intel device(s)"
+        local sycl_output sycl_record_counts intel_devices sycl_gpu_devices
+        sycl_output=$($run_as bash -c "source '$oneapi_setvars' >/dev/null 2>&1 && sycl-ls 2>/dev/null" || true)
+        sycl_record_counts=$(printf '%s\n' "$sycl_output" | awk '
+            function flush_record() {
+                if (!in_record) {
+                    return
+                }
+                if (record_intel) {
+                    intel++
+                }
+                if (record_intel && record_gpu) {
+                    intel_gpu++
+                }
+                in_record = 0
+                record_intel = 0
+                record_gpu = 0
+            }
+            NF == 0 {
+                flush_record()
+                next
+            }
+            /^\[/ {
+                flush_record()
+            }
+            {
+                in_record = 1
+                line = tolower($0)
+                if (line ~ /intel/) {
+                    record_intel = 1
+                }
+                if (line ~ /^\[[^]]*:gpu:[^]]*\]/ ||
+                    line ~ /^[[:space:]]*(device[[:space:]]+)?type[[:space:]]*:[[:space:]]*gpu([[:space:]]|$)/) {
+                    record_gpu = 1
+                }
+            }
+            END {
+                flush_record()
+                printf "%d %d\n", intel + 0, intel_gpu + 0
+            }
+        ' || true)
+        set -- $sycl_record_counts
+        intel_devices="${1:-0}"
+        sycl_gpu_devices="${2:-0}"
+        if [[ "$sycl_gpu_devices" -gt 0 ]]; then
+            ok "Verification: sycl-ls sees $sycl_gpu_devices Intel GPU device(s)"
             ((pass++))
         elif [[ "$visibility_relogin_pending" == "true" ]]; then
-            warn "Verification: sycl-ls sees 0 devices (expected — render group pending re-login)"
+            warn "Verification: sycl-ls sees 0 Intel GPU devices (expected — render group pending re-login)"
             ((warn_count++))
             needs_relogin=true
+        elif [[ "$intel_devices" -gt 0 ]]; then
+            fail "Verification: sycl-ls sees Intel devices but no Intel GPU devices"
+            ((fail_count++))
         else
-            fail "Verification: sycl-ls sees no Intel devices"
+            fail "Verification: sycl-ls sees no Intel GPU devices"
             ((fail_count++))
         fi
     else
@@ -958,7 +1060,7 @@ main() {
     info ""
 
     detect_gpu_type
-    detect_distro
+    detect_distro || exit 1
 
     check_omix_repo
     check_omix_runtime
