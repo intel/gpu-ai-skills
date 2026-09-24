@@ -79,7 +79,7 @@ the script installs system packages and modifies group membership.
 The script:
 1. Detects what's installed (idempotent — safe to re-run)
 2. Installs only what's missing (with prompts unless `--auto`)
-3. Runs the post-setup verification gate (7 checks)
+3. Runs post-setup configuration verification and captures sensor/log evidence
 
 The raw commands shown in the table below are what the script runs
 internally — they are descriptive, not a manual checklist. Step 3 only
@@ -142,6 +142,10 @@ plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh 
 ~/.out/skills/xpu-system-setup/SUMMARY.md
 ~/.out/skills/xpu-system-setup/setup.log
 ~/.out/skills/xpu-system-setup/status.tsv
+~/.out/skills/xpu-system-setup/xpu-smi-health.txt      # evidence, not scored
+~/.out/skills/xpu-system-setup/kernel-log.txt           # journalctl -k capture
+~/.out/skills/xpu-system-setup/kernel-log.err
+~/.out/skills/xpu-system-setup/kernel-log-review.txt    # selected lines to read
 ```
 
 `status.tsv` columns: `component | before | action | after | result`
@@ -154,11 +158,19 @@ After setup, the script runs a verification gate:
 2. `id -nG` — user is in render group (active in current session)
 3. `clinfo` — Intel OpenCL devices detected
 4. `xpu-smi discovery` — Intel GPUs visible
-5. `xpu-smi diag --precheck` (or `xpu-smi health -l` on newer xpu-smi
-   releases that dropped `diag`) — driver health check
-6. `source /opt/intel/oneapi/setvars.sh && sycl-ls` — SYCL compiler sees
+5. `source /opt/intel/oneapi/setvars.sh && sycl-ls` — SYCL compiler sees
    Intel GPU device(s), not just an Intel CPU backend
-7. `docker info` — Docker daemon reachable
+6. `docker info` — Docker daemon reachable
+
+The script also saves `xpu-smi health -l` to `xpu-smi-health.txt` and a
+GPU-driver kernel-log selection to `kernel-log-review.txt`, in the output
+directory above. Neither is scored: `Warning` / `Critical` health statuses need
+follow-up and `Unknown` is inconclusive; log matches are lines to read, not
+faults. When `journalctl` is missing, the log is unreadable, or it has no
+xe/i915 driver lines, the run records a warning and reports
+`READY WITH WARNINGS`. See **xpu-discover** for the per-component health
+probes. `READY` means configuration checks passed, not that device health or
+workload execution is certified.
 
 If verification requires a re-login (group changes), the script
 reports `READY AFTER RELOGIN` and prints the command to verify
@@ -175,7 +187,7 @@ nothing was installed**:
    runs, and `--dry-run` to preview without changing anything. Name
    these so the user knows how to drive a real install.
 2. **Verification gate** — report the result of the post-setup
-   verification gate (the 7-check gate above). If you ran `--dry-run`
+   verification gate and the separate evidence above. If you ran `--dry-run`
    on an already-configured host, say the verification gate would run
    at the end of a real invocation and summarize the detected state.
 
@@ -299,11 +311,33 @@ and the
 then install with `dpkg -i`.
 
 **PCIe topology note:** `lspci` shows x1 downstream ports below the B70.
-This is not a slot wiring problem — the B70 has an on-card PCIe switch
-(`0xe2ff`) between the host link and the GPU die. On capable platforms
-the host-to-GPU link negotiates PCIe 5.0 x16; verify with
-`xpu-smi diag -d 0 --singletest 5` (older xpu-smi) or
-`xpu-smi listpciinfo` (xpu-smi 2.x, which dropped `diag`'s `--singletest`).
+This is not a slot wiring problem — these cards carry an on-card PCIe switch
+(`0xe2ff` on the B70) between the host link and the GPU die.
+
+`xpu-smi listpciinfo` reports what the card **advertises** (generation, max
+width), not what it negotiated. Add `sudo` to populate the PCI Slot column;
+without it that column reads `N/A`, `DMI reader failed` warnings go to stderr,
+and the command still exits 0. For the negotiated host link, walk up from the
+GPU's BDF: the endpoint and the switch's downstream port both report the
+on-card link.
+
+```sh
+d=0000:18:00.0                      # replace with the GPU's discovery BDF
+if path=$(readlink -e "/sys/bus/pci/devices/$d"); then
+    while [ -f "$path/vendor" ]; do
+        width=$(cat "$path/current_link_width") || break
+        speed=$(cat "$path/current_link_speed") || break
+        max_width=$(cat "$path/max_link_width") || break
+        printf '%s  x%s @ %s (max x%s)\n' "${path##*/}" "$width" "$speed" "$max_width"
+        path=${path%/*}
+    done
+else
+    printf 'Unknown PCI BDF: %s\n' "$d" >&2
+fi
+```
+
+The two can diverge: one Arc Pro B60 host advertised Gen 5 x16 while its
+bridges negotiated `x8 @ 5.0 GT/s`. Neither figure is a measured transfer rate.
 
 ## Supported Distributions
 
@@ -364,5 +398,3 @@ runtime/dev packages to remove and the `apt autoremove` follow-up.
 - Docker install uses the official convenience script from
   `get.docker.com`. For air-gapped environments, pre-install Docker
   and use `--skip docker`.
-
-

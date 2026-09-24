@@ -119,6 +119,12 @@ STATUS_TSV="$OUT_DIR/status.tsv"
 SUMMARY="$OUT_DIR/SUMMARY.md"
 : > "$LOG"
 echo -e "component\tbefore\taction\tafter\tresult" > "$STATUS_TSV"
+# OUT_DIR persists across runs: stamp the evidence files on every invocation,
+# dry runs included, so a skipped probe cannot leave the previous run's output
+# behind.
+for evidence in xpu-smi-health.txt kernel-log.txt kernel-log.err kernel-log-review.txt; do
+    printf 'not collected in this run; see the verification output\n' >"$OUT_DIR/$evidence"
+done
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG" >&2; }
 info() { echo -e "${BLUE}[INFO]${NC} $*" | tee -a "$LOG" >&2; }
@@ -854,23 +860,43 @@ run_verification() {
         ((warn_count++))
     fi
 
-    # Driver health. xpu-smi 2.x removed the legacy diag subcommand.
+    # Captured, never scored: neither the output nor the exit status is a
+    # health verdict.
     if command -v xpu-smi &>/dev/null; then
-        if xpu-smi help 2>/dev/null | grep -qw diag; then
-            if $run_as xpu-smi diag --precheck &>/dev/null; then
-                ok "Verification: driver precheck passed"
-                ((pass++))
-            else
-                warn "Verification: driver precheck had warnings"
+        local health_rc
+        $run_as xpu-smi health -l >"$OUT_DIR/xpu-smi-health.txt" 2>&1
+        health_rc=$?
+        info "Verification: health command exit=$health_rc; output captured, not assessed; see $OUT_DIR/xpu-smi-health.txt"
+    fi
+
+    # Log matches are triage evidence, not a verdict, but a log that cannot be
+    # reviewed is a warning. Only xe/i915 lines count as driver activity; IOMMU
+    # and DRM core lines are kept for review. The leading `\b` keeps `fault`
+    # from matching `Default`; no trailing boundary, so `errors` and
+    # `Resetting` still match.
+    local log_selector='guc|huc|iommu|drm|\bxe\b|i915|level.?zero'
+    local log_driver='\b(xe|i915)\b'
+    local log_faults='\b(error|fail|warn|timed? ?out|reset|hang|wedged|fault)'
+    if command -v journalctl &>/dev/null; then
+        if journalctl -k --no-pager >"$OUT_DIR/kernel-log.txt" 2>"$OUT_DIR/kernel-log.err"; then
+            local drv_lines match_lines
+            drv_lines=$(grep -icE "$log_driver" "$OUT_DIR/kernel-log.txt" || true)
+            grep -iE "$log_selector" "$OUT_DIR/kernel-log.txt" \
+                | grep -iE "$log_faults" >"$OUT_DIR/kernel-log-review.txt" || true
+            match_lines=$(wc -l <"$OUT_DIR/kernel-log-review.txt" | tr -d ' ')
+            if [[ "$drv_lines" -eq 0 ]]; then
+                warn "Verification: no xe/i915 driver log lines; review $OUT_DIR/kernel-log.txt and $OUT_DIR/kernel-log.err"
                 ((warn_count++))
+            else
+                info "Verification: $match_lines message(s) to review in $drv_lines xe/i915 driver log line(s); see $OUT_DIR/kernel-log-review.txt"
             fi
-        elif $run_as xpu-smi health -l &>/dev/null; then
-            ok "Verification: xpu-smi health check passed"
-            ((pass++))
         else
-            warn "Verification: xpu-smi health telemetry is unsupported or unavailable"
+            warn "Verification: could not read the kernel log; see $OUT_DIR/kernel-log.err"
             ((warn_count++))
         fi
+    else
+        warn "Verification: journalctl not found; kernel log not reviewed"
+        ((warn_count++))
     fi
 
     # SYCL compiler stack (part of the OMIX runtime install).
@@ -969,6 +995,7 @@ run_verification() {
     fi
 
     info "Verdict: $verdict"
+    info "Scope: configuration checks only; workload execution and device health are not certified. Review sensor output and kernel-log evidence before running workloads."
 
     if [[ "$needs_relogin" == "true" ]]; then
         info ""
@@ -984,6 +1011,12 @@ run_verification() {
 
 # --- Generate summary ---
 generate_summary() {
+    local evidence_note
+    if [[ "$1" == "DRY-RUN COMPLETE" ]]; then
+        evidence_note='Dry run: the verification gate did not run and no evidence files were collected.'
+    else
+        evidence_note='Configuration checks only. Sensor output (`xpu-smi-health.txt`) is captured, not scored. Kernel-log matches (`kernel-log-review.txt`) are lines to read, not faults; a log that could not be reviewed counts as a warning. Workload execution and device health are not certified.'
+    fi
     local verdict="$1"
     cat > "$SUMMARY" <<EOF
 # XPU System Setup Summary
@@ -996,6 +1029,8 @@ generate_summary() {
 
 ## Verdict: $verdict
 
+$evidence_note
+
 ## Component Status
 
 $(column -t -s$'\t' "$STATUS_TSV" 2>/dev/null || cat "$STATUS_TSV")
@@ -1006,7 +1041,7 @@ EOF
 
     case "$verdict" in
         "READY")
-            echo "System is ready for XPU workloads. You can verify GPU access with \`xpu-smi discovery\` or \`clinfo\`." >> "$SUMMARY"
+            echo "Configuration checks passed. Review the sensor/log evidence, then verify execution with the intended XPU runtime." >> "$SUMMARY"
             ;;
         "READY AFTER RELOGIN")
             cat >> "$SUMMARY" <<'EOF'
@@ -1026,13 +1061,16 @@ EOF
             ;;
         "READY WITH WARNINGS")
             cat >> "$SUMMARY" <<'EOF'
-System is usable but some checks reported warnings (see the verification
-log). Common causes:
+Configuration checks reported warnings (see the verification log).
+Review them before deciding whether to run a workload. Common causes:
 
 - A component was skipped (`SKIPPED` / `FILTERED` in the status table) —
   re-run with `--auto` or without `--only` to install it.
 - An optional verification probe was skipped because its tool isn't
   installed (e.g., xpu-smi missing causes the GPU-count check to be skipped).
+- The kernel log could not be reviewed: `journalctl` missing, the log
+  unreadable by this user, or no xe/i915 driver lines. See `kernel-log.err`;
+  run with sudo or join the `adm` / `systemd-journal` group.
 
 Re-run the script after addressing the warnings to confirm a clean PASS.
 EOF
