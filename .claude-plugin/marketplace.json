@@ -38,7 +38,7 @@
       "skills": [
         "./"
       ],
-      "description": "Run a read-only go/no-go preflight before any Intel GPU/XPU skillpack work. Checks driver health, /dev/dri permissions, render/video groups, Docker, /dev/shm, disk, proxy, and optional container-level XPU visibility. Use when the user asks whether a machine is ready for XPU model work or needs a reusable lab readiness report. Not for launching workloads, pulling images, editing system config, or verifying model output."
+      "description": "Run a read-only go/no-go preflight before any Intel GPU/XPU skillpack work. Checks the GPU driver binding, /dev/dri permissions, render/video groups, Docker, /dev/shm, disk, proxy, and optional container-level XPU visibility; captures health and kernel-log evidence. Use when the user asks whether a machine is ready for XPU model work or needs a reusable lab readiness report. Not for launching workloads, pulling images, editing system config, or verifying model output."
     },
     {
       "name": "xpu-container-run",
