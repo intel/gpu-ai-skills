@@ -116,9 +116,22 @@ esac
 mkdir -p "$out_dir"
 status_tsv="$out_dir/status.tsv"
 log_file="$out_dir/preflight.log"
+discovery_json="$out_dir/xpu-smi-discovery.json"
 summary_md="$out_dir/SUMMARY.md"
 : >"$log_file"
 printf 'status\tcheck\tdetail\n' >"$status_tsv"
+
+# out_dir persists across runs: stamp every evidence file, including the
+# flag-gated ones, so a skipped probe cannot leave the previous run's output
+# behind.
+for evidence in xpu-smi-discovery.json xpu-smi-discovery.err \
+    xpu-smi-discovery-lookup.err xpu-smi-health.txt xpu-smi-stats-target.txt \
+    target-driver.txt kernel-log.txt kernel-log.err kernel-log-review.txt \
+    dev-dri.txt dev-dri-stat.txt docker-info.txt docker-buildx.txt docker-ps.txt \
+    df-dev-shm.txt df-workdir.txt curl-dockerhub.txt curl-huggingface.txt \
+    curl-xpu-wheels.txt image-inspect.txt image-preflight.txt; do
+    printf 'not collected in this run; see status.tsv\n' >"$out_dir/$evidence"
+done
 
 pass_count=0
 warn_count=0
@@ -243,29 +256,110 @@ http_probe() {
     fi
 }
 
-discovery_field() {
-    local field_name="$1"
-    awk -F'|' -v target="$target_gpu" -v want="$field_name" '
-        function trim(s) {
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
-            return s
-        }
-        !id_col {
-            for (i = 1; i <= NF; i++) {
-                name = trim($i)
-                if (name == "Device ID") id_col = i
-                if (name == want) want_col = i
-            }
-            if (id_col || want_col) next
-        }
-        id_col && want_col {
-            id = trim($id_col)
-            if (id == target) {
-                print trim($want_col)
-                exit
-            }
-        }
-    ' "$out_dir/xpu-smi-discovery.txt"
+# Resolve the target from `xpu-smi discovery -j`; the table is display-only.
+# Prints "<bdf>\t<drm>" and returns 0, or prints a reason and
+# returns 3 bad JSON, 4 no devices, 5 missing or invalid fields, 6 target
+# absent, 7 xpu-smi reported an error object.
+discovery_lookup() {
+    python3 - "$discovery_json" "$target_gpu" <<'PY'
+import json
+import re
+import sys
+
+path, target = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as handle:
+        doc = json.load(handle)
+except (OSError, ValueError) as exc:
+    print(f"{type(exc).__name__}: {exc}")
+    raise SystemExit(3)
+
+if isinstance(doc, dict) and "error" in doc:
+    print(str(doc["error"])[:200])
+    raise SystemExit(7)
+if not isinstance(doc, dict):
+    print("expected a discovery object")
+    raise SystemExit(3)
+
+devices = doc.get("device_list")
+if not isinstance(devices, list):
+    print("device_list must be an array")
+    raise SystemExit(3)
+if not devices:
+    print("device_list is empty")
+    raise SystemExit(4)
+
+device_ids = []
+for device in devices:
+    device_id = device.get("device_id") if isinstance(device, dict) else None
+    if (
+        not isinstance(device_id, (int, str))
+        or isinstance(device_id, bool)
+        or not re.fullmatch(r"[0-9]+", str(device_id))
+    ):
+        print("each device must have a non-negative numeric device_id")
+        raise SystemExit(3)
+    device_ids.append(int(device_id))
+if len(set(device_ids)) != len(device_ids):
+    print("duplicate device_id values")
+    raise SystemExit(3)
+
+for device, device_id in zip(devices, device_ids):
+    if device_id != int(target):
+        continue
+    fields = {
+        "pci_bdf_address": r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]",
+        "drm_device": r"/dev/dri/card[0-9]+",
+    }
+    invalid = [
+        name for name, pattern in fields.items()
+        if not isinstance(device.get(name), str) or not re.fullmatch(pattern, device[name])
+    ]
+    if invalid:
+        print(", ".join(invalid))
+        raise SystemExit(5)
+    print("%s\t%s" % (device["pci_bdf_address"], device["drm_device"]))
+    raise SystemExit(0)
+
+print(", ".join(map(str, device_ids)))
+raise SystemExit(6)
+PY
+}
+
+# Kernel-log review is triage evidence, not a health verdict: matches mean
+# "read these". Only xe/i915 lines count as driver activity; IOMMU and DRM
+# core lines are kept for review but prove nothing about the GPU driver. The
+# leading `\b` keeps `fault` from matching `Default`; no trailing boundary,
+# so `errors`, `Resetting` and `Timedout` still match.
+kernel_log_selector='guc|huc|iommu|drm|\bxe\b|i915|level.?zero'
+kernel_log_driver='\b(xe|i915)\b'
+kernel_log_faults='\b(error|fail|warn|timed? ?out|reset|hang|wedged|fault)'
+
+check_kernel_log_review() {
+    local driver_lines match_lines
+
+    if ! has_command journalctl; then
+        record WARN kernel-log-review "journalctl not found; kernel log not reviewed"
+        return
+    fi
+
+    # A read failure is not the same as zero matches.
+    if ! journalctl -k --no-pager >"$out_dir/kernel-log.txt" 2>"$out_dir/kernel-log.err"; then
+        record WARN kernel-log-review "could not read the kernel log; see kernel-log.err"
+        return
+    fi
+
+    driver_lines=$(grep -icE "$kernel_log_driver" "$out_dir/kernel-log.txt" || true)
+    grep -iE "$kernel_log_selector" "$out_dir/kernel-log.txt" \
+        | grep -iE "$kernel_log_faults" >"$out_dir/kernel-log-review.txt" || true
+    match_lines=$(wc -l <"$out_dir/kernel-log-review.txt" | tr -d ' ')
+    if [ "$driver_lines" -eq 0 ]; then
+        record WARN kernel-log-review "no xe/i915 driver log lines; review kernel-log.txt and kernel-log.err"
+    elif [ "$match_lines" -eq 0 ]; then
+        record INFO kernel-log-review "no matching messages in $driver_lines GPU driver log line(s)"
+    else
+        record INFO kernel-log-review "$match_lines message(s) to review; see kernel-log-review.txt"
+    fi
 }
 
 check_target_driver() {
@@ -321,56 +415,72 @@ log_run uname uname -a
 
 target_gpu_found=0
 if has_command xpu-smi; then
-    if xpu-smi discovery >"$out_dir/xpu-smi-discovery.txt" 2>&1; then
-        if grep -q 'Device ID' "$out_dir/xpu-smi-discovery.txt"; then
-            record PASS xpu-discovery "Intel GPU inventory found"
-            if awk -F'|' 'NR > 1 {
-                    gsub(/[[:space:]]/, "", $2)
-                    if ($2 ~ /^[0-9]+$/) print $2
-                }' "$out_dir/xpu-smi-discovery.txt" | grep -Fxq "$target_gpu"; then
+    if ! has_command python3; then
+        record FAIL preflight-dependency "python3 is required to parse xpu-smi discovery JSON"
+    elif xpu-smi discovery -j >"$discovery_json" 2>"$out_dir/xpu-smi-discovery.err"; then
+        lookup_out=$(discovery_lookup 2>"$out_dir/xpu-smi-discovery-lookup.err")
+        lookup_rc=$?
+        case "$lookup_rc" in
+            0)
+                record PASS xpu-discovery "Intel GPU inventory found"
                 target_gpu_found=1
                 record PASS target-gpu "target GPU $target_gpu appears in discovery"
-                target_bdf=$(discovery_field "PCI BDF Address")
-                target_drm=$(discovery_field "DRM Device")
-                check_target_driver "$target_bdf" "$target_drm"
-            else
-                record FAIL target-gpu "target GPU $target_gpu not found in discovery"
-            fi
-        else
-            record FAIL xpu-discovery "no Intel GPU entries in discovery output"
-        fi
+                check_target_driver "${lookup_out%%	*}" "${lookup_out##*	}"
+                ;;
+            6)
+                record PASS xpu-discovery "Intel GPU inventory found"
+                record FAIL target-gpu "target GPU $target_gpu not in discovery; present: $lookup_out"
+                ;;
+            5)
+                record PASS xpu-discovery "Intel GPU inventory found"
+                record FAIL target-gpu "target GPU $target_gpu has missing or invalid field(s): $lookup_out"
+                ;;
+            4)
+                record FAIL xpu-discovery "discovery reported no devices ($lookup_out)"
+                ;;
+            3)
+                record FAIL xpu-discovery "discovery JSON invalid ($lookup_out); see xpu-smi-discovery.json"
+                ;;
+            7)
+                record FAIL xpu-discovery "xpu-smi reported an error ($lookup_out); see xpu-smi-discovery.json"
+                ;;
+            *)
+                record FAIL preflight-dependency "discovery parser exited $lookup_rc; see xpu-smi-discovery-lookup.err"
+                ;;
+        esac
     else
-        record FAIL xpu-discovery "xpu-smi discovery failed; see xpu-smi-discovery.txt"
+        record FAIL xpu-discovery "xpu-smi discovery -j failed; see xpu-smi-discovery.err"
     fi
-    if xpu-smi diag --precheck >"$out_dir/xpu-smi-precheck.txt" 2>&1; then
-        record PASS xpu-precheck "driver/firmware precheck completed"
-    else
-        record WARN xpu-precheck "precheck returned nonzero; see xpu-smi-precheck.txt"
-    fi
+    # Captured, never scored: neither the output nor the exit status is a
+    # health verdict. Do not add a PASS/WARN row.
+    xpu-smi health -l >"$out_dir/xpu-smi-health.txt" 2>&1
+    health_rc=$?
+    record INFO xpu-health "health command exit=$health_rc; output captured, not assessed; see xpu-smi-health.txt"
     if [ "$target_gpu_found" -eq 1 ]; then
-        if xpu-smi diag -d "$target_gpu" -l 1 >"$out_dir/xpu-smi-diag-target.txt" 2>&1; then
-            record PASS xpu-diag "diag -d $target_gpu -l 1 completed"
-        else
-            record WARN xpu-diag "diag for target $target_gpu returned nonzero; inspect per-test rows"
-        fi
+        # xpu-smi 2.0 to 2.2 reject `-n`; `--samples` bounds the run.
         if has_command timeout; then
-            stats_cmd=(timeout 10s xpu-smi stats -n 1 -d "$target_gpu")
+            stats_cmd=(timeout -k 5s 10s xpu-smi stats -d "$target_gpu" --samples 1)
         else
-            stats_cmd=(xpu-smi stats -n 1 -d "$target_gpu")
+            stats_cmd=(xpu-smi stats -d "$target_gpu" --samples 1)
         fi
         if "${stats_cmd[@]}" >"$out_dir/xpu-smi-stats-target.txt" 2>&1; then
-            record PASS xpu-stats "stats -n 1 -d $target_gpu completed"
+            record PASS xpu-stats "stats -d $target_gpu --samples 1 completed"
         else
-            record WARN xpu-stats "bounded stats probe for target $target_gpu returned nonzero; see xpu-smi-stats-target.txt"
+            stats_rc=$?
+            if [ "$stats_rc" -eq 124 ]; then
+                record WARN xpu-stats "stats probe for target $target_gpu timed out after 10s; partial output in xpu-smi-stats-target.txt"
+            else
+                record WARN xpu-stats "stats probe for target $target_gpu exited $stats_rc; see xpu-smi-stats-target.txt"
+            fi
         fi
     else
-        record WARN xpu-diag "skipped because target GPU $target_gpu was not found"
-        record WARN xpu-stats "skipped because target GPU $target_gpu was not found"
+        record WARN xpu-stats "skipped because target GPU $target_gpu was not resolved from discovery"
     fi
     log_run xpu-smi-ps xpu-smi ps
 else
     record FAIL xpu-smi "xpu-smi not found"
 fi
+check_kernel_log_review
 
 if [ -d "$dev_dri_dir" ]; then
     ls -l "$dev_dri_dir" >"$out_dir/dev-dri.txt" 2>&1
@@ -550,6 +660,8 @@ fi
         verdict="READY"
     fi
     printf 'Verdict: `%s`\n\n' "$verdict"
+    printf 'Scope: configuration prerequisites and optional XPU visibility only; workload execution and device health are not certified.\n\n'
+    printf 'Review sensor output and kernel-log evidence before treating this report as a workload go-ahead; INFO rows do not affect the verdict.\n\n'
     printf 'Result counts: PASS `%s`, WARN `%s`, FAIL `%s`.\n\n' \
         "$pass_count" "$warn_count" "$fail_count"
     first_fail=$(awk -F '\t' 'NR > 1 && $1 == "FAIL" {print $2 ": " $3; exit}' "$status_tsv")
