@@ -57,6 +57,7 @@ docker run --rm -it \
 | `-e ZE_AFFINITY_MASK=0` | Pin to GPU 0. See **xpu-discover** for IDs. Always set explicitly. |
 | `-v ~/.cache/huggingface:...` | Share the host model cache; avoid re-download. |
 | `--entrypoint /bin/bash` | Override server-image autostart for interactive use. |
+| `--rm -it` | Interactive shell, removed on exit. Needs a terminal; from an agent, `ssh host cmd` or CI see **Common errors**. |
 
 ## When `--privileged` is needed
 
@@ -64,8 +65,6 @@ Exception, not rule. Required only for:
 
 - `unitrace` / VTune collectors that read PMU MSRs.
 - GPU firmware updates (`xpu-smi updatefw`).
-- `xpu-smi diag --singletest 5` (PCIe bandwidth) and similar
-  low-level diag tests.
 
 For running models and most profiling, `--device /dev/dri` is
 enough. Add `--privileged` only when you hit a specific permission
@@ -90,7 +89,6 @@ xpu-smi discovery
 | empty `discovery` table | no `/dev/dri` passed | add `--device /dev/dri` |
 | `Level Zero init failed` / `EACCES` | user not in `render` group | add `--group-add "$(getent group render | cut -d: -f3)"` |
 | wrong GPU count | `ZE_AFFINITY_MASK` inherited from host | pass mask explicitly with `-e` |
-| `diag` works on host, fails in container | container not privileged | add `--privileged`, or skip diag inside container |
 
 ## Common errors
 
@@ -104,6 +102,14 @@ xpu-smi discovery
   and run `xpu-smi discovery` in the container.
 - `bus error` early in vLLM/PyTorch startup → shared memory too
   small. Use `--ipc=host` or raise `--shm-size`.
+- `the input device is not a TTY` (exit 1), or ssh's `Pseudo-terminal
+  will not be allocated because stdin is not a terminal` → `-it` with no
+  terminal: an agent, `ssh host cmd` or CI. Start it detached:
+  `docker run --rm -d --name <name>` with the Quickstart flags unchanged,
+  including `--entrypoint /bin/bash` (the `-c` needs it), ending
+  `<image> -c "sleep infinity"`. Run commands with
+  `docker exec <name> <cmd>`. Keep `--rm`: then `docker stop <name>`
+  also removes the container.
 
 ## Env vars
 
