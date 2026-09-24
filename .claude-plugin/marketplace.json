@@ -30,7 +30,7 @@
       "skills": [
         "./"
       ],
-      "description": "Inventory Intel GPUs (Arc, Arc Pro, Data Center GPU Max) on a Linux host. Detect devices, check driver health, list processes using each XPU, run a quick diagnostic, and read live utilisation."
+      "description": "Inventory Intel GPUs (Arc, Arc Pro) on a Linux host. Detect devices, collect driver, firmware and component-health evidence, list processes using each XPU, and read live utilisation."
     },
     {
       "name": "xpu-runtime-preflight",
