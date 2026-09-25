@@ -72,11 +72,22 @@ This validates:
 
 Expected output: `All checks passed.` Anything else is a bug.
 
-Every check above uses only the Python standard library, so this layer runs on
-a bare interpreter. The documentation and script pattern checks shell out to
+Every check above is stdlib-only, so on the release branch this layer runs on a
+bare interpreter. On `main` the gate additionally runs `guardrails/check.py`,
+which needs PyYAML; without it that step prints `PyYAML is required: pip install
+pyyaml` and the gate exits non-zero. On `main`, install it first:
+
+```sh
+python3 -m pip install pyyaml
+```
+
+It is not made a skip when absent on purpose — a missing package must not
+silently switch a gate off.
+
+The documentation and script pattern checks shell out to
 `ripgrep` (`rg`), so have it on your PATH.
 
-One optional package: `tests/xpu-port.sh` needs `libcst` to exercise its
+One further optional package: `tests/xpu-port.sh` needs `libcst` to exercise its
 scanner and rewriter sections. Absent it, that script announces `SKIP: libcst not
 importable` and the rest of the suite still passes. `pip install libcst` if you
 are changing anything under the `xpu-port` skill.
@@ -141,6 +152,9 @@ plausible numbers and refuses cleanly on diffusion:
 # Decoder-only LLM
 python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model Qwen/Qwen2.5-1.5B-Instruct --quant bf16 --device-vram-gb 32
+
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
+    --model deepseek-ai/DeepSeek-V4-Flash --device-vram-gb 32 --tp 8
 
 # VLM (architecture detected, vision tower folded into weights)
 python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
@@ -343,7 +357,7 @@ step.
 If all six steps complete without the user pasting any link or
 flag from the SKILL.md bodies, the pack is doing its job.
 
-## Layer 6 — Routing spot-check (~5 minutes, no GPU)
+## Layer 6 — Triggering eval (~5 minutes, no GPU)
 
 Confirms the agent picks the right skill from a battery of
 prompts. Used as part of authoring; reviewers can re-run if they
@@ -355,6 +369,16 @@ model" without naming PyTorch / vLLM / SGLang. Acceptance: clear
 cases all route to a single skill; ambiguous cases trigger an "ask
 for clarification" response from the agent; adversarial cases route
 to NONE or to a redirect skill.
+
+The golden positive/negative prompts described here (and in Layer 4b)
+are also encoded as executable YAML test plans under
+[`evaluation/`](evaluation/README.md), graded by the `skillverify`
+harness. Use that to run the triggering eval reproducibly — against
+mock traces with no GPU/API (`pytest -q`), or against live agent CLIs
+(`skillverify run contracts/*.yaml --available --plugins models_evals`).
+It records each run to sealed JSONL and reports whether a skill
+**never activated** versus **activated but did the wrong thing** —
+the distinction this manual layer asks a human to eyeball.
 
 ## What is NOT tested at any layer
 
