@@ -142,6 +142,9 @@ plausible numbers and refuses cleanly on diffusion:
 python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model Qwen/Qwen2.5-1.5B-Instruct --quant bf16 --device-vram-gb 32
 
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
+    --model deepseek-ai/DeepSeek-V4-Flash --device-vram-gb 32 --tp 8
+
 # VLM (architecture detected, vision tower folded into weights)
 python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model Qwen/Qwen2.5-VL-7B-Instruct --quant bf16 --device-vram-gb 32
