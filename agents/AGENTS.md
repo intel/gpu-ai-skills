@@ -63,7 +63,7 @@ IMPORTANT: When a SKILL.md points at files under its `references/` directory, yo
 
 - xpu-deploy-plan: Plan an end-to-end Intel XPU model deployment by chaining existing skills. Calls xpu-runtime-preflight (readiness), model-can-it-fit (sizing), model-config-recommend (flags), and the selected runtime skill (vllm-xpu-run / sglang-xpu-run / torch-xpu-run), then writes a single PLAN.md with one exact launch command, smoke test, and rollback to .out/skills/xpu-deploy-plan/. Use when the user asks for a coordinated plan (not a direct deploy/serve request) — wants the orchestration across preflight, fit, config, launch, smoke test, and rollback, or asks which skills to run and in what order.
 
-- xpu-discover: Inventory Intel GPUs (Arc, Arc Pro, Data Center GPU Max) on a Linux host. Detect devices, check driver health, list processes using each XPU, run a quick diagnostic, and read live utilisation.
+- xpu-discover: Inventory Intel GPUs (Arc, Arc Pro) on a Linux host. Detect devices, collect driver, firmware and component-health evidence, list processes using each XPU, and read live utilisation.
 
 - xpu-model-type-detect: Before loading a Hugging Face model on Intel XPU, detect its actual type (text generation, text encoder, seq2seq, vision classification, vision-language, audio encoder, audio seq2seq, multimodal VL, diffusion, time-series, reward model, masked LM) so the agent picks the right `AutoModel` class and input kwargs. Prevents "got unexpected keyword argument 'pixel_values'" and "empty logits" errors from mis-routing. Use before `torch-xpu-run` or `vllm-xpu-run` when the user gives a model id the agent hasn't seen before, or when a smoke test fails with a wrong-input signature.
 
