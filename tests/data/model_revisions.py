@@ -62,6 +62,9 @@ drop one without checking what stops being covered.
     gpt-oss-20b, gpt-oss-120b        pre-quantized mxfp4, mixed-precision path
     Llama-3.1-8B, Llama-3.3-70B      dense; matched against the HF KV calculator
     Gemma-2-9B, Gemma-2-27B          dense with an explicit head_dim=256
+    Qwen2-VL-7B, Qwen2.5-VL-7B       VLM; ViT width from embed_dim, gated tower
+    Qwen2-VL-7B-AWQ                  VLM whose exclusion list is ["visual"]
+    Qwen2.5-VL-7B-AWQ                VLM whose vision_config has no depth field
 
 Expected results are recorded in the "Layer 3a" section of HOW_TO_TEST.md.
 """
@@ -86,7 +89,51 @@ MODEL_REVISIONS = {
     "meta-llama/Llama-3.3-70B-Instruct":  "6f6073b423013f6a7d4d9f39144961bfbfbc386b",  # 2024-12-21
     "google/gemma-2-9b-it":               "11c9b309abf73637e4b6f9a3fa1e92e615547819",  # 2024-08-27
     "google/gemma-2-27b-it":              "aaf20e6b9f4c0fcf043f6fb2a2068419086d77b0",  # 2024-08-27
+
+    # Pinned for TestMeasuredOnDevice, which compares each config
+    # against the weight figure vLLM-XPU reported when that exact
+    # revision was served (see MEASUREMENT_DATE below -- the dates in
+    # these comments are the revisions' own lastModified, per the
+    # convention above, not when the measurement was taken). Bumping a
+    # pin here invalidates the measurement it is compared against, so
+    # re-measure rather than widening the tolerance.
+    "Qwen/Qwen2.5-0.5B-Instruct":         "7ae557604adf67be50417f59c2c2f167def9a775",  # 2024-09-25
+    "Qwen/Qwen2.5-1.5B-Instruct":         "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",  # 2024-09-25
+    "Qwen/Qwen3-0.6B":                    "c1899de289a04d12100db370d81485cdf75e47ca",  # 2025-07-26
+    "Qwen/Qwen3-4B":                      "1cfa9a7208912126459214e8b04321603b3df60c",  # 2025-07-26
+    "Qwen/Qwen3-8B":                      "b968826d9c46dd6066d109eabc6255188de91218",  # 2025-07-26
+    "Qwen/Qwen3-14B":                     "40c069824f4251a91eefaf281ebe4c544efd3e18",  # 2025-07-26
+    "Qwen/Qwen3.5-35B-A3B":               "59d61f3ce65a6d9863b86d2e96597125219dc754",  # 2026-04-24
+    "microsoft/Phi-4-mini-instruct":      "cfbefacb99257ffa30c83adab238a50856ac3083",  # 2025-12-10
+    "mistralai/Mistral-7B-Instruct-v0.3": "c170c708c41dac9275d15a8fff4eca08d52bab71",  # 2025-12-03
+    "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B": "6e8885a6ff5c1dc5201574c8fd700323f23c25fa",  # 2025-05-29
+    "NousResearch/Hermes-3-Llama-3.1-8B": "896ea440e5a9e6070e3d8a2774daf2b481ab425b",  # 2024-09-08
+    "tiiuae/Falcon3-7B-Instruct":         "1e57a0ecd176c7c139f289c60a74e57f887c3dfb",  # 2025-05-31
+    "nvidia/Llama-3.1-Nemotron-Nano-8B-v1": "54641c1611fcff44fa4865626462445e0a153fc7",  # 2025-10-15
+    "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4": "e9c932ac1893a49ae0fc497ad6e1e86e2e39af20",  # 2024-10-18
+    "Qwen/Qwen2.5-7B-Instruct-AWQ":       "b25037543e9394b818fdfca67ab2a00ecc7dd641",  # 2024-10-09
+    "meta-llama/Llama-3.2-3B-Instruct":   "0cb88a4f764b7a12671c53f0838cd831a0843b95",  # 2024-10-24
+
+    # Pinned for TestVisionTowerPricing, which compares each estimate against
+    # the root-level safetensors byte total of that exact revision, and for the
+    # VLM rows of TestMeasuredOnDevice, which compare against what vLLM-XPU
+    # allocated when these revisions were served (VLM_MEASUREMENT_DATE below).
+    "Qwen/Qwen2-VL-7B-Instruct":          "eed13092ef92e448dd6875b2a00151bd3f7db0ac",  # 2025-02-06
+    "Qwen/Qwen2-VL-7B-Instruct-AWQ":      "6ec2560b0afc3a618d4acc9b8e2967d1642f463d",  # 2024-09-25
+    "Qwen/Qwen2.5-VL-7B-Instruct":        "cc594898137f460bfe9f0759e9844b3ce807cfb5",  # 2025-04-06
+    "Qwen/Qwen2.5-VL-7B-Instruct-AWQ":    "536a35794df8831aa814970ee8f89eff577e7718",  # 2025-04-06
 }
+
+# When the TestMeasuredOnDevice figures were taken on hardware. Kept separate
+# from the revision dates above: one says what the upstream config was, the
+# other says when this project measured it. A pin refresh needs both updated.
+MEASUREMENT_DATE = "2026-09-18"   # 2x Intel Arc B-series, vllm/vllm-openai-xpu:latest
+
+# The VLM rows were served later, on the same SKU and the same image. Kept as
+# its own constant so a pin refresh on one set does not silently re-date the
+# other.
+VLM_MEASUREMENT_DATE = "2026-09-23"   # Arc Pro B70 (0xe223), device 1, same image
+
 
 # Models whose config.json needs an accepted licence + HF_TOKEN to fetch.
 # Informational: the fetch path skips on any 401/403 rather than consulting
@@ -94,6 +141,7 @@ MODEL_REVISIONS = {
 # code change here.
 GATED_MODELS = frozenset({
     "meta-llama/Llama-3.1-8B-Instruct",
+    "meta-llama/Llama-3.2-3B-Instruct",
     "meta-llama/Llama-3.3-70B-Instruct",
     "google/gemma-2-9b-it",
     "google/gemma-2-27b-it",

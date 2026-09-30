@@ -1,6 +1,7 @@
 ---
 name: xpu-runtime-preflight
-description: Run a read-only go/no-go preflight before any Intel GPU/XPU skillpack work. Checks driver health, /dev/dri permissions, render/video groups, Docker, /dev/shm, disk, proxy, and optional container-level XPU visibility. Use when the user asks whether a machine is ready for XPU model work or needs a reusable lab readiness report. Not for launching workloads, pulling images, editing system config, or verifying model output.
+description: Run a read-only go/no-go preflight before any Intel GPU/XPU skillpack work. Checks the GPU driver binding, /dev/dri permissions, render/video groups, Docker, /dev/shm, disk, proxy, and optional container-level XPU visibility; captures health and kernel-log evidence. Use when the user asks whether a machine is ready for XPU model work or needs a reusable lab readiness report. Not for launching workloads, pulling images, editing system config, or verifying model output.
+compatibility: Linux with Bash, Python 3 (standard library), xpu-smi, and Docker. journalctl is needed for kernel-log evidence; without it the run is READY WITH WARNINGS.
 ---
 
 # xpu-runtime-preflight
@@ -58,22 +59,26 @@ The script writes:
 ```
 
 It also writes per-check evidence files such as
-`xpu-smi-discovery.txt`, `xpu-smi-precheck.txt`,
-`xpu-smi-diag-target.txt`, `xpu-smi-stats-target.txt`,
+`xpu-smi-discovery.json`, `xpu-smi-health.txt`,
+`xpu-smi-stats-target.txt`, `kernel-log.txt`, `kernel-log-review.txt`,
 `target-driver.txt`, `dev-dri.txt`, `docker-info.txt`, and, when
 `--image` is supplied, `image-preflight.txt`.
+
+Device resolution parses `xpu-smi discovery -j` with `python3`. When
+`xpu-smi` is present but `python3` is missing or cannot run the parser, the
+script records `FAIL preflight-dependency`.
 
 ## What Counts As Ready
 
 Hard pass before GPU/XPU skill work:
 
-1. `xpu-smi discovery` sees the target GPU.
+1. `xpu-smi discovery -j` resolves the target GPU, with the
+   `pci_bdf_address` and `drm_device` fields this script needs.
 2. The target GPU has an inspectable kernel driver binding. `xe` and
    `i915` are accepted; `vfio*` blocks because the host driver did not
    bind the target GPU for XPU runtime use.
-3. Targeted `xpu-smi diag -d <id> -l 1` and bounded
-   `xpu-smi stats -d <id>` complete or leave inspectable warning
-   artifacts.
+3. Bounded `xpu-smi stats -d <id> --samples 1` completes or leaves an
+   inspectable warning artifact.
 4. `/dev/dri/renderD*` exists and permissions are understandable.
 5. Docker daemon is reachable by the current user.
 6. `/dev/shm` and disk space are not obviously too small.
@@ -81,10 +86,24 @@ Hard pass before GPU/XPU skill work:
    Level Zero or Python XPU visibility probe. The default Python probe
    requires `torch.xpu.is_available()` and a nonzero XPU device count.
 
+A clean run means **prerequisites satisfied, execution not tested**: only
+step 7 exercises the runtime.
+
 Warnings do not block every workflow. A missing proxy is fine on direct
-networks; missing BuildKit is fine unless the next step builds an image;
-a workstation `xpu-smi diag` permission warning may still allow GPU work
-if the computation sub-test passes.
+networks; missing BuildKit is fine unless the next step builds an image.
+
+Two rows are evidence to read, not health verdicts. As `INFO` they do not
+affect the result:
+
+- `xpu-health` saves `xpu-smi health -l` to `xpu-smi-health.txt` and records
+  only its exit code, which does not track component condition across builds.
+  Investigate `Warning` / `Critical`; `Unknown` or missing is inconclusive.
+  See **xpu-discover** for per-component probes.
+- `kernel-log-review` lists GPU driver log lines worth reading in
+  `kernel-log-review.txt`. It flags some benign lines and misses some real
+  faults, so no matches is not a clean bill. It records `WARN` instead (so
+  `READY WITH WARNINGS`) when `journalctl` is missing, the log is unreadable,
+  or it has no xe/i915 driver lines.
 
 ## Result Routing
 
