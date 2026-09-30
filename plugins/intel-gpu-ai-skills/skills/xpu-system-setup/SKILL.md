@@ -79,7 +79,7 @@ the script installs system packages and modifies group membership.
 The script:
 1. Detects what's installed (idempotent — safe to re-run)
 2. Installs only what's missing (with prompts unless `--auto`)
-3. Runs post-setup configuration verification and captures sensor/log evidence
+3. Runs post-setup configuration verification and captures sensor evidence
 
 The raw commands shown in the table below are what the script runs
 internally — they are descriptive, not a manual checklist. Step 3 only
@@ -143,9 +143,6 @@ plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh 
 ~/.out/skills/xpu-system-setup/setup.log
 ~/.out/skills/xpu-system-setup/status.tsv
 ~/.out/skills/xpu-system-setup/xpu-smi-health.txt      # evidence, not scored
-~/.out/skills/xpu-system-setup/kernel-log.txt           # journalctl -k capture
-~/.out/skills/xpu-system-setup/kernel-log.err
-~/.out/skills/xpu-system-setup/kernel-log-review.txt    # distinct matches with repeat counts
 ```
 
 `status.tsv` columns: `component | before | action | after | result`
@@ -162,17 +159,12 @@ After setup, the script runs a verification gate:
    Intel GPU device(s), not just an Intel CPU backend
 6. `docker info` — Docker daemon reachable
 
-The script also saves `xpu-smi health -l` to `xpu-smi-health.txt` and a
-GPU-driver kernel-log selection to `kernel-log-review.txt`, in the output
-directory above. Neither is scored: `Warning` / `Critical` health statuses need
-follow-up and `Unknown` is inconclusive; log matches are messages to read, not
-faults. The review file has one line per distinct message with its repeat
-count, most frequent first; the timestamps stay in `kernel-log.txt`. When
-`journalctl` is missing, the log is unreadable, or it has no xe/i915 driver
-lines, the run records a warning and reports `READY WITH WARNINGS`. See
-**xpu-discover** for the per-component health probes. `READY` means
-configuration checks passed, not that device health or workload execution is
-certified.
+The script also saves `xpu-smi health -l` to `xpu-smi-health.txt` in the
+output directory above. It is not scored: `Warning` / `Critical` health
+statuses need follow-up and `Unknown` is inconclusive. See **xpu-discover** for
+the per-component health probes, and run **xpu-runtime-preflight** for GPU
+driver kernel-log triage. `READY` means configuration checks passed, not that
+device health or workload execution is certified.
 
 If verification requires a re-login (group changes), the script
 reports `READY AFTER RELOGIN` and prints the command to verify
