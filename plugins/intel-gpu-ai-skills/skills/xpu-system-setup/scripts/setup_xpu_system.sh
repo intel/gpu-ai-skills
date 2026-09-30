@@ -873,22 +873,29 @@ run_verification() {
     # reviewed is a warning. Only xe/i915 lines count as driver activity; IOMMU
     # and DRM core lines are kept for review. The leading `\b` keeps `fault`
     # from matching `Default`; no trailing boundary, so `errors` and
-    # `Resetting` still match.
+    # `Resetting` still match. The review file holds one line per distinct
+    # message with its repeat count, most frequent first: the
+    # `<date> <host> <tag>: ` prefix is stripped so repeats collapse, and the
+    # timestamps stay in kernel-log.txt. The tag is not always `kernel:`.
     local log_selector='guc|huc|iommu|drm|\bxe\b|i915|level.?zero'
     local log_driver='\b(xe|i915)\b'
     local log_faults='\b(error|fail|warn|timed? ?out|reset|hang|wedged|fault)'
+    local log_prefix='^[A-Z][a-z]{2} [ 0-9][0-9] [0-9:]{8} [^ ]+ [^ ]+: '
     if command -v journalctl &>/dev/null; then
         if journalctl -k --no-pager >"$OUT_DIR/kernel-log.txt" 2>"$OUT_DIR/kernel-log.err"; then
-            local drv_lines match_lines
+            local drv_lines match_lines distinct_msgs
             drv_lines=$(grep -icE "$log_driver" "$OUT_DIR/kernel-log.txt" || true)
             grep -iE "$log_selector" "$OUT_DIR/kernel-log.txt" \
-                | grep -iE "$log_faults" >"$OUT_DIR/kernel-log-review.txt" || true
-            match_lines=$(wc -l <"$OUT_DIR/kernel-log-review.txt" | tr -d ' ')
+                | grep -iE "$log_faults" \
+                | sed -E "s/$log_prefix//" \
+                | sort | uniq -c | sort -rn >"$OUT_DIR/kernel-log-review.txt" || true
+            distinct_msgs=$(wc -l <"$OUT_DIR/kernel-log-review.txt" | tr -d ' ')
+            match_lines=$(awk '{s += $1} END {print s + 0}' "$OUT_DIR/kernel-log-review.txt")
             if [[ "$drv_lines" -eq 0 ]]; then
                 warn "Verification: no xe/i915 driver log lines; review $OUT_DIR/kernel-log.txt and $OUT_DIR/kernel-log.err"
                 ((warn_count++))
             else
-                info "Verification: $match_lines message(s) to review in $drv_lines xe/i915 driver log line(s); see $OUT_DIR/kernel-log-review.txt"
+                info "Verification: $distinct_msgs distinct message(s) ($match_lines matching line(s)) to review in $drv_lines xe/i915 driver log line(s); see $OUT_DIR/kernel-log-review.txt"
             fi
         else
             warn "Verification: could not read the kernel log; see $OUT_DIR/kernel-log.err"
@@ -1015,7 +1022,7 @@ generate_summary() {
     if [[ "$1" == "DRY-RUN COMPLETE" ]]; then
         evidence_note='Dry run: the verification gate did not run and no evidence files were collected.'
     else
-        evidence_note='Configuration checks only. Sensor output (`xpu-smi-health.txt`) is captured, not scored. Kernel-log matches (`kernel-log-review.txt`) are lines to read, not faults; a log that could not be reviewed counts as a warning. Workload execution and device health are not certified.'
+        evidence_note='Configuration checks only. Sensor output (`xpu-smi-health.txt`) is captured, not scored. Kernel-log matches (`kernel-log-review.txt`, one line per distinct message with its repeat count) are messages to read, not faults; a log that could not be reviewed counts as a warning. Workload execution and device health are not certified.'
     fi
     local verdict="$1"
     cat > "$SUMMARY" <<EOF

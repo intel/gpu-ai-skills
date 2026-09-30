@@ -145,7 +145,7 @@ plugins/intel-gpu-ai-skills/skills/xpu-system-setup/scripts/setup_xpu_system.sh 
 ~/.out/skills/xpu-system-setup/xpu-smi-health.txt      # evidence, not scored
 ~/.out/skills/xpu-system-setup/kernel-log.txt           # journalctl -k capture
 ~/.out/skills/xpu-system-setup/kernel-log.err
-~/.out/skills/xpu-system-setup/kernel-log-review.txt    # selected lines to read
+~/.out/skills/xpu-system-setup/kernel-log-review.txt    # distinct matches with repeat counts
 ```
 
 `status.tsv` columns: `component | before | action | after | result`
@@ -165,12 +165,14 @@ After setup, the script runs a verification gate:
 The script also saves `xpu-smi health -l` to `xpu-smi-health.txt` and a
 GPU-driver kernel-log selection to `kernel-log-review.txt`, in the output
 directory above. Neither is scored: `Warning` / `Critical` health statuses need
-follow-up and `Unknown` is inconclusive; log matches are lines to read, not
-faults. When `journalctl` is missing, the log is unreadable, or it has no
-xe/i915 driver lines, the run records a warning and reports
-`READY WITH WARNINGS`. See **xpu-discover** for the per-component health
-probes. `READY` means configuration checks passed, not that device health or
-workload execution is certified.
+follow-up and `Unknown` is inconclusive; log matches are messages to read, not
+faults. The review file has one line per distinct message with its repeat
+count, most frequent first; the timestamps stay in `kernel-log.txt`. When
+`journalctl` is missing, the log is unreadable, or it has no xe/i915 driver
+lines, the run records a warning and reports `READY WITH WARNINGS`. See
+**xpu-discover** for the per-component health probes. `READY` means
+configuration checks passed, not that device health or workload execution is
+certified.
 
 If verification requires a re-login (group changes), the script
 reports `READY AFTER RELOGIN` and prints the command to verify
