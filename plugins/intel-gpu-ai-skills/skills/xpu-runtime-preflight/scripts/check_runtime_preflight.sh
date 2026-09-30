@@ -332,8 +332,11 @@ PY
 # leading `\b` keeps `fault` from matching `Default`; no trailing boundary,
 # so `errors`, `Resetting` and `Timedout` still match. The review file holds
 # one line per distinct message with its repeat count, most frequent first:
-# the `<date> <host> <tag>: ` prefix is stripped so repeats collapse, and the
-# timestamps stay in kernel-log.txt. The tag is not always `kernel:`.
+# the `<date> <host> <tag>: ` prefix of journalctl's default short format is
+# stripped so identical messages collapse (a changing field, such as a seqno,
+# keeps them apart), and the timestamps stay in kernel-log.txt. journalctl
+# runs under LC_ALL=C, so the month is an English abbreviation whatever the
+# host's locale. The tag is not always `kernel:`.
 kernel_log_selector='guc|huc|iommu|drm|\bxe\b|i915|level.?zero'
 kernel_log_driver='\b(xe|i915)\b'
 kernel_log_faults='\b(error|fail|warn|timed? ?out|reset|hang|wedged|fault)'
@@ -348,7 +351,7 @@ check_kernel_log_review() {
     fi
 
     # A read failure is not the same as zero matches.
-    if ! journalctl -k --no-pager >"$out_dir/kernel-log.txt" 2>"$out_dir/kernel-log.err"; then
+    if ! LC_ALL=C journalctl -k --no-pager >"$out_dir/kernel-log.txt" 2>"$out_dir/kernel-log.err"; then
         record WARN kernel-log-review "could not read the kernel log; see kernel-log.err"
         return
     fi

@@ -128,12 +128,16 @@ case "${MOCK_JOURNAL_MODE:-ok}" in
         ;;
     benign-reset) printf 'xe: reset completed successfully\n' ;;
     repeats)
-        # Repeats that are not adjacent, a space-padded day and a non-`kernel:` tag.
-        cat <<'REPEATS'
-Sep 08 11:51:00 mockhost kernel: xe 0000:18:00.0: [drm] *ERROR* GT0: TLB invalidation timed out
-Sep  9 02:03:04 mockhost kernel: xe 0000:18:00.0: [drm] GT0: Engine reset
-Sep 10 11:51:02 mockhost kernel: xe 0000:18:00.0: [drm] *ERROR* GT0: TLB invalidation timed out
-Sep 10 11:51:03 mockhost unknown: xe 0000:18:00.0: [drm] *ERROR* GT0: TLB invalidation timed out
+        # Repeats that are not adjacent, a space-padded day and a non-`kernel:` tag. The most frequent message
+        # sorts last by text, so only the count order puts it first. Like journalctl, the mock prints the month
+        # in the caller's locale: a French one unless LC_ALL=C.
+        month=Sep
+        [ "${LC_ALL:-}" = C ] || month=sept.
+        sed "s/^Sep /$month /" <<'REPEATS'
+Sep 08 11:51:00 mockhost kernel: xe 0000:18:00.0: [drm] GT0: Engine reset
+Sep  9 02:03:04 mockhost kernel: xe 0000:18:00.0: [drm] *ERROR* GT0: TLB invalidation timed out
+Sep 10 11:51:02 mockhost kernel: xe 0000:18:00.0: [drm] GT0: Engine reset
+Sep 10 11:51:03 mockhost unknown: xe 0000:18:00.0: [drm] GT0: Engine reset
 REPEATS
         ;;
 esac
@@ -197,6 +201,8 @@ export PATH="$mock_bin:$PATH"
 export MOCK_DOCKER_LOG="$tmp/docker.log"
 export MOCK_XPU_SMI_LOG="$tmp/xpu-smi.log"
 export MOCK_JOURNALCTL_LOG="$tmp/journalctl.log"
+# Leave LC_ALL empty, so the journalctl mock prints a French month unless the script sets LC_ALL=C.
+export LC_ALL=
 export XPU_PREFLIGHT_DEV_DRI_DIR="$mock_dev_dri"
 
 fail() {
@@ -454,7 +460,7 @@ for mode in faults benign-reset repeats denied empty no-driver; do
             require_grep "^INFO"$'\tkernel-log-review\t'"$distinct distinct message\\(s\\) \\($matches matching line\\(s\\)\\)" "$journal_out/status.tsv"
             [ "$(wc -l <"$journal_out/kernel-log-review.txt")" -eq "$distinct" ] || fail 'wrong distinct message count'
             if [ "$mode" = repeats ]; then
-                expected=$'3 xe 0000:18:00.0: [drm] *ERROR* GT0: TLB invalidation timed out\n1 xe 0000:18:00.0: [drm] GT0: Engine reset'
+                expected=$'3 xe 0000:18:00.0: [drm] GT0: Engine reset\n1 xe 0000:18:00.0: [drm] *ERROR* GT0: TLB invalidation timed out'
                 [ "$(sed 's/^ *//' "$journal_out/kernel-log-review.txt")" = "$expected" ] || fail 'repeats not collapsed into counts'
             fi
             ;;
