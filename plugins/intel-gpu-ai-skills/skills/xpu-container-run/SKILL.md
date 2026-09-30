@@ -102,14 +102,18 @@ xpu-smi discovery
   and run `xpu-smi discovery` in the container.
 - `bus error` early in vLLM/PyTorch startup → shared memory too
   small. Use `--ipc=host` or raise `--shm-size`.
-- `the input device is not a TTY` (exit 1), or ssh's `Pseudo-terminal
-  will not be allocated because stdin is not a terminal` → `-it` with no
-  terminal: an agent, `ssh host cmd` or CI. Start it detached:
-  `docker run --rm -d --name <name>` with the Quickstart flags unchanged,
-  including `--entrypoint /bin/bash` (the `-c` needs it), ending
-  `<image> -c "sleep infinity"`. Run commands with
-  `docker exec <name> <cmd>`. Keep `--rm`: then `docker stop <name>`
-  also removes the container.
+- `the input device is not a TTY` (Docker CLI before 29.4) or
+  `cannot attach stdin to a TTY-enabled container because stdin is not a terminal`
+  (29.4 and later), both with exit status 1, or ssh's
+  `Pseudo-terminal will not be allocated because stdin is not a terminal`
+  → `-it` with no terminal: an agent, `ssh host cmd` or CI. For one
+  command, remove `-it` from the Quickstart command and replace its
+  final `<image>` with `<image> -c "<cmd>"`. For several commands in
+  one container, replace `-it` with `-d --name <name>` and the final
+  `<image>` with `<image> -c "sleep infinity"`, then run each with
+  `docker exec <name> <cmd>`. Keep the other Quickstart flags in both
+  forms, including `--entrypoint /bin/bash` (the `-c` needs it) and
+  `--rm`, so `docker stop <name>` also removes the detached container.
 
 ## Env vars
 
