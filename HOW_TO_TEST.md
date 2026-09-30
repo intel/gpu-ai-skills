@@ -142,6 +142,9 @@ plausible numbers and refuses cleanly on diffusion:
 python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model Qwen/Qwen2.5-1.5B-Instruct --quant bf16 --device-vram-gb 32
 
+python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
+    --model deepseek-ai/DeepSeek-V4-Flash --device-vram-gb 32 --tp 8
+
 # VLM (architecture detected, vision tower folded into weights)
 python3 plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts/fit.py \
     --model Qwen/Qwen2.5-VL-7B-Instruct --quant bf16 --device-vram-gb 32
@@ -304,7 +307,7 @@ users will actually type:
 
 | User prompt | Expected skill behavior |
 |---|---|
-| "What Intel GPUs do I have and are they healthy?" | Uses `xpu-discover`; reports devices, driver, render group, quick diagnostic. |
+| "What Intel GPUs do I have and are they healthy?" | Uses `xpu-discover`; reports devices, driver, component health statuses and kernel-log evidence, without calling `Unknown` sensors or an empty log scan healthy. |
 | "Will Qwen2.5-32B int4 fit on my Arc Pro B70 at 8K context and concurrency 4?" | Uses `model-can-it-fit`; fetches config, prints weights/KV/activation/framework breakdown and FITS / DOES NOT FIT. |
 | "What is the expected performance of Qwen2.5-7B on Arc Pro B70 at 8K with vLLM?" | Uses `model-config-recommend`; reports config-derived TTFT, decode-step latency, aggregate decode band, and explains the MFU/BWE efficiency band. |
 | "What is the best configuration for this model on 4x Arc Pro B70 cards?" | Uses `model-config-recommend`; evaluates DP/TP, prefers DP when the model fits per card, emits one launch command per DP replica or TP when needed. |

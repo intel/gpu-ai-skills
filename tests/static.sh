@@ -101,6 +101,46 @@ for d in plugins/intel-gpu-ai-skills/skills/*/; do
     ok "$name"
 done
 
+# 2a. Parse SKILL.md frontmatter as YAML when PyYAML is available. PyYAML is
+# optional and is not part of the Python standard library.
+if python3 -c 'import yaml' >/dev/null 2>&1; then
+    printf '\n== YAML frontmatter syntax check ==\n'
+    if python3 - <<'PY'
+from pathlib import Path
+import sys
+import yaml
+
+errors = []
+for path in sorted(Path("plugins/intel-gpu-ai-skills/skills").glob("*/SKILL.md")):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0] != "---":
+        errors.append(f"{path}: missing opening YAML frontmatter delimiter")
+        continue
+    try:
+        closing = lines.index("---", 1)
+    except ValueError:
+        errors.append(f"{path}: missing closing YAML frontmatter delimiter")
+        continue
+    try:
+        parsed = yaml.safe_load("\n".join(lines[1:closing]))
+        if not isinstance(parsed, dict):
+            errors.append(f"{path}: frontmatter must be a YAML mapping")
+    except yaml.YAMLError as exc:
+        errors.append(f"{path}: invalid YAML frontmatter: {exc}")
+
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    sys.exit(1)
+PY
+    then
+        ok "all SKILL.md frontmatter parses as YAML"
+    else
+        err "SKILL.md YAML frontmatter parse failed"
+    fi
+else
+    printf '\n\033[33mWARN\033[0m  PyYAML unavailable; optional YAML syntax check skipped\n'
+fi
+
 # 3. Python helpers compile.
 printf '\n== Python helpers compile ==\n'
 while IFS= read -r f; do

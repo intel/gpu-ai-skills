@@ -1,6 +1,6 @@
 ---
 name: model-config-recommend
-description: Recommend how to configure vLLM-XPU for a Hugging Face decoder-only LLM on Intel Arc B-series GPUs: choose quantization, KV dtype, DP/TP layout, max concurrency, and max context using roofline math against published hardware specs. Use when the user asks "How should I configure vLLM?", requests the best vLLM configuration, or asks how to use one or multiple Arc cards. Must run recommend.py; predictions are physics-bounded ranges, not measured throughput. Use after xpu-discover and before vllm-xpu-run.
+description: 'Recommend how to configure vLLM-XPU for a Hugging Face decoder-only LLM on Intel Arc B-series GPUs: choose quantization, KV dtype, DP/TP layout, max concurrency, and max context using roofline math against published hardware specs. Use when the user asks "How should I configure vLLM?", requests the best vLLM configuration, or asks how to use one or multiple Arc cards. Must run recommend.py; predictions are physics-bounded ranges, not measured throughput. Use after xpu-discover and before vllm-xpu-run.'
 ---
 
 # model-config-recommend
