@@ -330,13 +330,20 @@ PY
 # "read these". Only xe/i915 lines count as driver activity; IOMMU and DRM
 # core lines are kept for review but prove nothing about the GPU driver. The
 # leading `\b` keeps `fault` from matching `Default`; no trailing boundary,
-# so `errors`, `Resetting` and `Timedout` still match.
+# so `errors`, `Resetting` and `Timedout` still match. The review file holds
+# one line per distinct message with its repeat count, most frequent first:
+# the `<date> <host> <tag>: ` prefix of journalctl's default short format is
+# stripped so identical messages collapse (a changing field, such as a seqno,
+# keeps them apart), and the timestamps stay in kernel-log.txt. journalctl
+# runs under LC_ALL=C, so the month is an English abbreviation whatever the
+# host's locale. The tag is not always `kernel:`.
 kernel_log_selector='guc|huc|iommu|drm|\bxe\b|i915|level.?zero'
 kernel_log_driver='\b(xe|i915)\b'
 kernel_log_faults='\b(error|fail|warn|timed? ?out|reset|hang|wedged|fault)'
+kernel_log_prefix='^[A-Z][a-z]{2} [ 0-9][0-9] [0-9:]{8} [^ ]+ [^ ]+: '
 
 check_kernel_log_review() {
-    local driver_lines match_lines
+    local driver_lines match_lines distinct_msgs
 
     if ! has_command journalctl; then
         record WARN kernel-log-review "journalctl not found; kernel log not reviewed"
@@ -344,21 +351,24 @@ check_kernel_log_review() {
     fi
 
     # A read failure is not the same as zero matches.
-    if ! journalctl -k --no-pager >"$out_dir/kernel-log.txt" 2>"$out_dir/kernel-log.err"; then
+    if ! LC_ALL=C journalctl -k --no-pager >"$out_dir/kernel-log.txt" 2>"$out_dir/kernel-log.err"; then
         record WARN kernel-log-review "could not read the kernel log; see kernel-log.err"
         return
     fi
 
     driver_lines=$(grep -icE "$kernel_log_driver" "$out_dir/kernel-log.txt" || true)
     grep -iE "$kernel_log_selector" "$out_dir/kernel-log.txt" \
-        | grep -iE "$kernel_log_faults" >"$out_dir/kernel-log-review.txt" || true
-    match_lines=$(wc -l <"$out_dir/kernel-log-review.txt" | tr -d ' ')
+        | grep -iE "$kernel_log_faults" \
+        | sed -E "s/$kernel_log_prefix//" \
+        | sort | uniq -c | sort -rn >"$out_dir/kernel-log-review.txt" || true
+    distinct_msgs=$(wc -l <"$out_dir/kernel-log-review.txt" | tr -d ' ')
+    match_lines=$(awk '{s += $1} END {print s + 0}' "$out_dir/kernel-log-review.txt")
     if [ "$driver_lines" -eq 0 ]; then
         record WARN kernel-log-review "no xe/i915 driver log lines; review kernel-log.txt and kernel-log.err"
     elif [ "$match_lines" -eq 0 ]; then
         record INFO kernel-log-review "no matching messages in $driver_lines GPU driver log line(s)"
     else
-        record INFO kernel-log-review "$match_lines message(s) to review; see kernel-log-review.txt"
+        record INFO kernel-log-review "$distinct_msgs distinct message(s) ($match_lines matching line(s)) to review; see kernel-log-review.txt"
     fi
 }
 

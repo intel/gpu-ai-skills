@@ -99,9 +99,13 @@ affect the result:
   only its exit code, which does not track component condition across builds.
   Investigate `Warning` / `Critical`; `Unknown` or missing is inconclusive.
   See **xpu-discover** for per-component probes.
-- `kernel-log-review` lists GPU driver log lines worth reading in
-  `kernel-log-review.txt`. It flags some benign lines and misses some real
-  faults, so no matches is not a clean bill. It records `WARN` instead (so
+- `kernel-log-review` lists GPU-related kernel log messages (xe, i915,
+  GuC/HuC, DRM, IOMMU, Level Zero) worth reading in `kernel-log-review.txt`,
+  one line per distinct message with its repeat count, most frequent first.
+  Only identical messages collapse, so one that carries a changing field, such
+  as a sequence number, keeps a line per value; the timestamps stay in
+  `kernel-log.txt`. It flags some benign lines and misses some real faults, so
+  no matches is not a clean bill. It records `WARN` instead (so
   `READY WITH WARNINGS`) when `journalctl` is missing, the log is unreadable,
   or it has no xe/i915 driver lines.
 

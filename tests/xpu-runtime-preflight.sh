@@ -127,6 +127,19 @@ case "${MOCK_JOURNAL_MODE:-ok}" in
         printf '%s\n' 'xe: GuC load failed' 'xe: page fault detected' 'drm: *ERROR* device unavailable'
         ;;
     benign-reset) printf 'xe: reset completed successfully\n' ;;
+    repeats)
+        # Repeats that are not adjacent, a space-padded day and a non-`kernel:` tag. The most frequent message
+        # sorts last by text, so only the count order puts it first. Like journalctl, the mock prints the month
+        # in the caller's locale: a French one unless LC_ALL=C.
+        month=Sep
+        [ "${LC_ALL:-}" = C ] || month=sept.
+        sed "s/^Sep /$month /" <<'REPEATS'
+Sep 08 11:51:00 mockhost kernel: xe 0000:18:00.0: [drm] GT0: Engine reset
+Sep  9 02:03:04 mockhost kernel: xe 0000:18:00.0: [drm] *ERROR* GT0: TLB invalidation timed out
+Sep 10 11:51:02 mockhost kernel: xe 0000:18:00.0: [drm] GT0: Engine reset
+Sep 10 11:51:03 mockhost unknown: xe 0000:18:00.0: [drm] GT0: Engine reset
+REPEATS
+        ;;
 esac
 
 # Three driver lines, no faults. "Default" trips an unanchored `fault` regex.
@@ -188,6 +201,8 @@ export PATH="$mock_bin:$PATH"
 export MOCK_DOCKER_LOG="$tmp/docker.log"
 export MOCK_XPU_SMI_LOG="$tmp/xpu-smi.log"
 export MOCK_JOURNALCTL_LOG="$tmp/journalctl.log"
+# Leave LC_ALL empty, so the journalctl mock prints a French month unless the script sets LC_ALL=C.
+export LC_ALL=
 export XPU_PREFLIGHT_DEV_DRI_DIR="$mock_dev_dri"
 
 fail() {
@@ -431,16 +446,23 @@ require_grep $'^WARN\tkernel-log-review\tjournalctl not found' "$stale_errors_ou
 require_grep 'not collected in this run' "$stale_errors_out/xpu-smi-discovery.err"
 require_grep 'not collected in this run' "$stale_errors_out/kernel-log.err"
 
-for mode in faults benign-reset denied empty no-driver; do
+for mode in faults benign-reset repeats denied empty no-driver; do
     journal_out="$tmp/journal-$mode"
     MOCK_JOURNAL_MODE="$mode" run_preflight "$journal_out"
     require_rc "$journal_out" 0
     case "$mode" in
-        faults|benign-reset)
-            matches=3
-            [ "$mode" != benign-reset ] || matches=1
-            require_grep "^INFO"$'\tkernel-log-review\t'"$matches message" "$journal_out/status.tsv"
-            [ "$(wc -l <"$journal_out/kernel-log-review.txt")" -eq "$matches" ] || fail 'wrong log match count'
+        faults|benign-reset|repeats)
+            case "$mode" in
+                faults) distinct=3 matches=3 ;;
+                benign-reset) distinct=1 matches=1 ;;
+                repeats) distinct=2 matches=4 ;;
+            esac
+            require_grep "^INFO"$'\tkernel-log-review\t'"$distinct distinct message\\(s\\) \\($matches matching line\\(s\\)\\)" "$journal_out/status.tsv"
+            [ "$(wc -l <"$journal_out/kernel-log-review.txt")" -eq "$distinct" ] || fail 'wrong distinct message count'
+            if [ "$mode" = repeats ]; then
+                expected=$'3 xe 0000:18:00.0: [drm] GT0: Engine reset\n1 xe 0000:18:00.0: [drm] *ERROR* GT0: TLB invalidation timed out'
+                [ "$(sed 's/^ *//' "$journal_out/kernel-log-review.txt")" = "$expected" ] || fail 'repeats not collapsed into counts'
+            fi
             ;;
         denied)
             require_grep $'^WARN\tkernel-log-review\tcould not read the kernel log' "$journal_out/status.tsv"
