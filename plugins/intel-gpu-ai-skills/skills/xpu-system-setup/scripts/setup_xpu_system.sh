@@ -119,6 +119,10 @@ STATUS_TSV="$OUT_DIR/status.tsv"
 SUMMARY="$OUT_DIR/SUMMARY.md"
 : > "$LOG"
 echo -e "component\tbefore\taction\tafter\tresult" > "$STATUS_TSV"
+# OUT_DIR persists across runs: stamp the evidence file on every invocation,
+# dry runs included, so a skipped probe cannot leave the previous run's output
+# behind.
+printf 'not collected in this run; see the verification output\n' >"$OUT_DIR/xpu-smi-health.txt"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG" >&2; }
 info() { echo -e "${BLUE}[INFO]${NC} $*" | tee -a "$LOG" >&2; }
@@ -854,23 +858,13 @@ run_verification() {
         ((warn_count++))
     fi
 
-    # Driver health. xpu-smi 2.x removed the legacy diag subcommand.
+    # Captured, never scored: neither the output nor the exit status is a
+    # health verdict.
     if command -v xpu-smi &>/dev/null; then
-        if xpu-smi help 2>/dev/null | grep -qw diag; then
-            if $run_as xpu-smi diag --precheck &>/dev/null; then
-                ok "Verification: driver precheck passed"
-                ((pass++))
-            else
-                warn "Verification: driver precheck had warnings"
-                ((warn_count++))
-            fi
-        elif $run_as xpu-smi health -l &>/dev/null; then
-            ok "Verification: xpu-smi health check passed"
-            ((pass++))
-        else
-            warn "Verification: xpu-smi health telemetry is unsupported or unavailable"
-            ((warn_count++))
-        fi
+        local health_rc
+        $run_as xpu-smi health -l >"$OUT_DIR/xpu-smi-health.txt" 2>&1
+        health_rc=$?
+        info "Verification: health command exit=$health_rc; output captured, not assessed; see $OUT_DIR/xpu-smi-health.txt"
     fi
 
     # SYCL compiler stack (part of the OMIX runtime install).
@@ -969,6 +963,7 @@ run_verification() {
     fi
 
     info "Verdict: $verdict"
+    info "Scope: configuration checks only; workload execution and device health are not certified. Review the sensor output, and run xpu-runtime-preflight for kernel-log triage, before running workloads."
 
     if [[ "$needs_relogin" == "true" ]]; then
         info ""
@@ -984,6 +979,12 @@ run_verification() {
 
 # --- Generate summary ---
 generate_summary() {
+    local evidence_note
+    if [[ "$1" == "DRY-RUN COMPLETE" ]]; then
+        evidence_note='Dry run: the verification gate did not run and no evidence files were collected.'
+    else
+        evidence_note='Configuration checks only. Sensor output (`xpu-smi-health.txt`) is captured, not scored. For GPU driver kernel-log triage, run **xpu-runtime-preflight**. Workload execution and device health are not certified.'
+    fi
     local verdict="$1"
     cat > "$SUMMARY" <<EOF
 # XPU System Setup Summary
@@ -996,6 +997,8 @@ generate_summary() {
 
 ## Verdict: $verdict
 
+$evidence_note
+
 ## Component Status
 
 $(column -t -s$'\t' "$STATUS_TSV" 2>/dev/null || cat "$STATUS_TSV")
@@ -1006,7 +1009,7 @@ EOF
 
     case "$verdict" in
         "READY")
-            echo "System is ready for XPU workloads. You can verify GPU access with \`xpu-smi discovery\` or \`clinfo\`." >> "$SUMMARY"
+            echo "Configuration checks passed. Review the sensor output, run xpu-runtime-preflight for kernel-log triage, then verify execution with the intended XPU runtime." >> "$SUMMARY"
             ;;
         "READY AFTER RELOGIN")
             cat >> "$SUMMARY" <<'EOF'
@@ -1026,8 +1029,8 @@ EOF
             ;;
         "READY WITH WARNINGS")
             cat >> "$SUMMARY" <<'EOF'
-System is usable but some checks reported warnings (see the verification
-log). Common causes:
+Configuration checks reported warnings (see the verification log).
+Review them before deciding whether to run a workload. Common causes:
 
 - A component was skipped (`SKIPPED` / `FILTERED` in the status table) —
   re-run with `--auto` or without `--only` to install it.
