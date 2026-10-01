@@ -151,27 +151,40 @@ from the date and shell PID.
 
 Use the `$SGLANG_PORT`, `$MODEL`, and `$CONTAINER_NAME` discovered in Step 0:
 
-```sh
-# Discover conda activate path (may differ on forked images)
-CONDA_SH=$(docker exec "$CONTAINER_NAME" sh -c 'find /home /root /opt -maxdepth 5 -name activate -path "*/miniforge*/bin/activate" 2>/dev/null | head -1')
+On `lmsysorg/sglang:v<version>-xpu` the interpreter that has `sglang`
+installed (`/opt/venv/bin/python3`) is already on `PATH`, so `docker exec`
+needs no environment activation. Resolve it once so the same commands also
+work on an older image that hides sglang in a conda env:
 
+```sh
+# Interpreter that has sglang: the venv on the official image, else conda's
+PY=$(docker exec "$CONTAINER_NAME" sh -c '
+    for p in /opt/venv/bin/python3 "$(command -v python3)"; do
+        [ -x "$p" ] && "$p" -c "import sglang" 2>/dev/null && { echo "$p"; exit 0; }
+    done
+    find /home /root /opt -maxdepth 6 -path "*/miniforge*/envs/*/bin/python3" 2>/dev/null |
+    while IFS= read -r p; do
+        [ -x "$p" ] && "$p" -c "import sglang" 2>/dev/null && { echo "$p"; exit 0; }
+    done')
+[ -n "$PY" ] || { echo "❌ No interpreter with sglang found in $CONTAINER_NAME"; exit 1; }
+echo "✓ bench interpreter: $PY"
+```
+
+```sh
 # Unique per-run output file so a stale file can't be mistaken for fresh output:
 RUN_TAG=$(date +%Y%m%d-%H%M%S)-$$
 OUT="/tmp/bench-${RUN_TAG}.jsonl"
 
 # Run benchmark inside the server container (where sglang is installed):
-docker exec -it "$CONTAINER_NAME" bash -c "
-. $CONDA_SH && conda activate py3.12 &&
-python3 -m sglang.bench_serving \
+docker exec -it "$CONTAINER_NAME" "$PY" -m sglang.bench_serving \
     --backend sglang-oai-chat \
-    --host 127.0.0.1 --port $SGLANG_PORT \
-    --model $MODEL \
+    --host 127.0.0.1 --port "$SGLANG_PORT" \
+    --model "$MODEL" \
     --dataset-name random \
     --random-input-len 512 --random-output-len 128 \
     --num-prompts 200 \
     --max-concurrency 8 \
-    --output-file $OUT
-"
+    --output-file "$OUT"
 
 # Read results from inside the container:
 docker exec "$CONTAINER_NAME" cat "$OUT"
@@ -181,8 +194,10 @@ Flag rationales:
 
 - `--backend sglang-oai-chat` → `/v1/chat/completions`. Use `sglang-oai`
   for `/v1/completions`; `sglang` for the native API. Match your server.
-- `--dataset-name random` — synthetic, deterministic at the same `--seed`,
-  no network. Use `sharegpt` for realistic prompt distribution.
+- `--dataset-name random` — synthetic lengths, deterministic at the same
+  `--seed`. Its token ids are sampled from ShareGPT, so the first run needs
+  network or a warm HF cache (see Troubleshooting). Use `sharegpt` for
+  realistic prompt distribution.
 - `--random-input-len` / `--random-output-len` — fix lengths for
   reproducible sweeps.
 - `--num-prompts` — aim for `>= 5 × max-concurrency` for steady state.
@@ -200,14 +215,12 @@ Auto-sizes from GPU count to find the throughput knee. Uses the
 ```sh
 GPU_COUNT=$(xpu-smi discovery 2>/dev/null | grep -cE "^\| +[0-9]|Device [0-9]+:")
 [ "${GPU_COUNT:-0}" -gt 0 ] || GPU_COUNT=1
-CONDA_SH=$(docker exec "$CONTAINER_NAME" sh -c 'find /home /root /opt -maxdepth 5 -name activate -path "*/miniforge*/bin/activate" 2>/dev/null | head -1')
 RUN_TAG=$(date +%Y%m%d-%H%M%S)-$$   # unique per sweep; files are /tmp/bench-${RUN_TAG}-c<N>.jsonl
 
 docker exec -it "$CONTAINER_NAME" bash -c "
-. $CONDA_SH && conda activate py3.12
 for c in $(printf '%s\n' 1 2 4 8 $((GPU_COUNT * 8)) $((GPU_COUNT * 16)) | sort -nu | tr '\n' ' '); do
     echo \"--- concurrency \$c ---\"
-    python3 -m sglang.bench_serving \
+    $PY -m sglang.bench_serving \
         --backend sglang-oai-chat \
         --host 127.0.0.1 --port $SGLANG_PORT \
         --model $MODEL \
@@ -254,23 +267,19 @@ container (where `sglang` is installed), using `$SGLANG_PORT`, `$MODEL`,
 and `$CONTAINER_NAME` from Step 0:
 
 ```sh
-CONDA_SH=$(docker exec "$CONTAINER_NAME" sh -c 'find /home /root /opt -maxdepth 5 -name activate -path "*/miniforge*/bin/activate" 2>/dev/null | head -1')
 # Unique per-run tag so a rerun's files don't append onto a stale one:
 RUN_TAG=$(date +%Y%m%d-%H%M%S)-$$
 
-# Cache-on run (sglang default), inside the container:
-docker exec -it "$CONTAINER_NAME" bash -c "
-. $CONDA_SH && conda activate py3.12 &&
-python3 -m sglang.bench_serving \
+# Cache-on run (sglang default), inside the container ($PY from above):
+docker exec -it "$CONTAINER_NAME" "$PY" -m sglang.bench_serving \
     --backend sglang-oai-chat \
-    --host 127.0.0.1 --port $SGLANG_PORT \
-    --model $MODEL \
+    --host 127.0.0.1 --port "$SGLANG_PORT" \
+    --model "$MODEL" \
     --dataset-name random \
     --random-input-len 1024 --random-output-len 64 \
     --num-prompts 500 --max-concurrency 8 \
     --random-range-ratio 0.1 \
-    --output-file /tmp/cache-on-${RUN_TAG}.jsonl
-"
+    --output-file "/tmp/cache-on-${RUN_TAG}.jsonl"
 
 # Read results from inside the container:
 docker exec "$CONTAINER_NAME" cat /tmp/cache-on-${RUN_TAG}.jsonl
@@ -306,6 +315,11 @@ quantized model, before trusting numbers:
   cite which you used.
 - First bench slow → cold Triton cache on a freshly-started server. Send
   a warmup run first: `--num-prompts 20 --max-concurrency 1`.
+- `LocalEntryNotFoundError` from `huggingface_hub` on `--dataset-name
+  random` → the random dataset samples token ids from ShareGPT, which is
+  fetched from the Hub on first use. It needs network (or a warm cache) in
+  the container; `HF_HUB_OFFLINE=1` breaks it. Pass an already-downloaded
+  `--dataset-path`, or drop the offline flag for the first run.
 - Bench hangs on connect → `ALL_PROXY` routing local traffic through a
   proxy. Unset `ALL_PROXY` and `all_proxy` before running.
 
