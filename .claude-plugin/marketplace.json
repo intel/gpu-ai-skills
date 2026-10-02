@@ -70,7 +70,7 @@
       "skills": [
         "./"
       ],
-      "description": "Serve a Hugging Face safetensors model on an Intel GPU using SGLang's XPU backend with the OpenAI-compatible API. Covers pulling the pre-built `intel/sglang-dev:latest` image, fixing the render-group and UMD/kernel compatibility issues that affect non-root sglang images, the SYCL_UR / Level Zero env vars needed on Battlemage, the `--device xpu --attention-backend intel_xpu` flag set, multimodal serving, and how to validate output content (not just HTTP 200). Use when the user needs SGLang's RadixAttention prefix caching or grammar-constrained output; for broad-coverage serving on Intel today prefer vllm-xpu-run, and for benchmarking a running server use sglang-xpu-bench."
+      "description": "Serve a Hugging Face safetensors model on an Intel GPU using SGLang's XPU backend with the OpenAI-compatible API. Covers pulling the official `lmsysorg/sglang:v0.5.20-xpu` release image, the container flag set for Intel DRM devices, the UMD/kernel pairing the image pins, the `--device xpu --attention-backend intel_xpu` flag set, page-size and quantization constraints, multimodal serving, and how to validate output content (not just HTTP 200). Use when the user needs SGLang's RadixAttention prefix caching or grammar-constrained output; for broad-coverage serving on Intel today prefer vllm-xpu-run, and for benchmarking a running server use sglang-xpu-bench."
     },
     {
       "name": "vllm-xpu-bench",

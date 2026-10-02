@@ -43,7 +43,7 @@ unitrace --device-list      # confirm sees XPU
 ```
 
 Prerequisites: CMake 3.22+, C++17 compiler, oneAPI Base Toolkit
-(present in `vllm/vllm-openai-xpu:latest` and any sglang-xpu image).
+(present in `vllm/vllm-openai-xpu:latest` and in `lmsysorg/sglang:v0.5.20-xpu`).
 Add `-DBUILD_WITH_MPI=1` for multi-GPU collective profiling;
 `-DCMAKE_INSTALL_PREFIX=/opt/unitrace && make install` for an
 installable layout. Verified clean on `vllm/vllm-openai-xpu:latest`
