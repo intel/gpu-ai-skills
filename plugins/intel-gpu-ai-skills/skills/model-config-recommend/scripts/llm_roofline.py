@@ -15,7 +15,8 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from common import count_params, fetch_config, kv_bytes_per_token, parse_model_dims
+from common import (count_active_params, count_params, fetch_config,
+                    kv_bytes_per_token, params_touched, parse_model_dims)
 from roofline import factors_from_dict, peak_ops_s, phase_roofline
 
 
@@ -74,15 +75,19 @@ def main(argv: list[str] | None = None) -> int:
     dims = parse_model_dims(cfg)
     params = count_params(dims)
     params_per_rank = params / args.tensor_parallel
+    tp = args.tensor_parallel
 
     device = next(d for d in HW["devices"] if d["id"] == args.device)
     quant = HW["quants"][args.quant]
     factors = factors_from_dict(HW["framework_factors"][args.runtime])
     weight_bytes = params_per_rank * quant["bytes_per_param"]
     kv_per_token = kv_bytes_per_token(dims, kv_dtype_bytes(args.kv_dtype)) / args.tensor_parallel
+    # MoE: compute scales with the active experts, and weight traffic with
+    # the experts the phase's tokens route to. Both equal the dense values
+    # for a dense model.
+    bpp = quant["bytes_per_param"]
     roof_kwargs = {
-        "params": params_per_rank,
-        "weight_bytes": weight_bytes,
+        "params": count_active_params(dims) / tp,
         "kv_bytes_per_token": kv_per_token,
         "context_tokens": args.ctx,
         "include_kv": True,
@@ -94,12 +99,14 @@ def main(argv: list[str] | None = None) -> int:
         name="prefill",
         tokens=args.ctx,
         batch=1,
+        weight_bytes=params_touched(dims, args.ctx) / tp * bpp,
         **roof_kwargs,
     )
     decode = phase_roofline(
         name="decode",
         tokens=args.decode_tokens,
         batch=args.concurrency,
+        weight_bytes=params_touched(dims, args.concurrency) / tp * bpp,
         **roof_kwargs,
     )
 
@@ -124,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Shape:     hidden={dims.hidden}, layers={dims.num_layers}, "
           f"heads={dims.num_attn_heads}, kv_heads={dims.num_kv_heads}")
     if dims.is_moe:
-        print("Note:      MoE config detected; dense param estimate is a coarse bound.")
+        print(f"MoE:       {dims.num_experts} experts, {dims.num_experts_per_tok} per token; "
+              f"{count_active_params(dims) / 1e9:.2f}B active params per token")
     print(f"Device:    {device['name']} ({device['memory_bandwidth_gbs']} GB/s)")
     print(f"Runtime:   {args.runtime}")
     print(f"Quant:     {args.quant} ({quant['bytes_per_param']} B/param, "

@@ -25,10 +25,12 @@ from pathlib import Path
 
 from common import (
     ModelDims,
+    count_active_params,
     count_params,
     fetch_config,
     is_local_model,
     kv_bytes_per_token,
+    params_touched,
     parse_model_dims,
 )
 from roofline import factors_from_dict, peak_ops_s, phase_roofline
@@ -322,12 +324,12 @@ def rank_candidates(d: ModelDims, params: int, ctx: int, concurrency: int,
                 continue
 
             qmeta = HW["quants"][quant]
-            params_per_rank = params / tp
-            weights_per_rank = params_per_rank * qmeta["bytes_per_param"]
+            # MoE: compute scales with the active experts, and weight traffic
+            # with the experts the phase's tokens actually route to.
+            bpp = qmeta["bytes_per_param"]
             kv_per_tok = kv_bytes_per_token(d, _kv_bytes(kv_dtype)) / tp
             roof_kwargs = {
-                "params": params_per_rank,
-                "weight_bytes": weights_per_rank,
+                "params": count_active_params(d) / tp,
                 "kv_bytes_per_token": kv_per_tok,
                 "context_tokens": ctx,
                 "include_kv": True,
@@ -339,12 +341,14 @@ def rank_candidates(d: ModelDims, params: int, ctx: int, concurrency: int,
                 name="prefill",
                 tokens=ctx,
                 batch=1,
+                weight_bytes=params_touched(d, ctx) / tp * bpp,
                 **roof_kwargs,
             )
             decode = phase_roofline(
                 name="decode",
                 tokens=1,
                 batch=max(concurrency, 1),
+                weight_bytes=params_touched(d, max(concurrency, 1)) / tp * bpp,
                 **roof_kwargs,
             )
 
@@ -572,6 +576,9 @@ def render(model_id: str, d: ModelDims, params: int, device: dict, framework: st
            revision: str | None = None) -> str:
     out = []
     out.append(f"Model:     {model_id}  ({params/1e9:.2f} B params, {d.family})")
+    if d.is_moe:
+        out.append(f"MoE:       {d.num_experts} experts, {d.num_experts_per_tok} per token; "
+                   f"{count_active_params(d)/1e9:.2f} B active params per token")
     out.append(f"Device:    {device['name']}  ({device['vram_gb']} GB GDDR6, "
                f"{device['memory_bandwidth_gbs']} GB/s)")
     out.append(f"Memory:    {device['vram_gb'] * gpu_memory_utilization:.1f} GB usable "
@@ -637,6 +644,16 @@ def render(model_id: str, d: ModelDims, params: int, device: dict, framework: st
     out.append("=== Verify before trusting ===")
     out.append("These are roofline-bounded predictions. Run vllm-xpu-bench against the launched")
     out.append("server with --num-prompts 30 --max-concurrency N to measure real TTFT and TPOT.")
+    out.append("")
+    out.append("=== Next steps after a stable eager run ===")
+    out.append("  - XPU graphs: relaunch via vllm-xpu-run's emit_launch.sh --xpu-graph")
+    out.append("    (drops --enforce-eager, sets VLLM_XPU_ENABLE_XPU_GRAPH=1 and")
+    out.append("    VLLM_USE_V2_MODEL_RUNNER=0). Usually the largest decode gain.")
+    if d.mtp_layers:
+        out.append("  - MTP speculative decoding: this checkpoint ships an MTP head")
+        out.append("    (not in the predictions above). Add emit_launch.sh --mtp 2, i.e.")
+        out.append("    --speculative-config '{\"method\":\"mtp\",\"num_speculative_tokens\":2}'.")
+    out.append("Re-bench each change; keep it only if TPOT/TTFT improve and output stays correct.")
     out.append("")
     out.append("Out of scope for this skill (verify yourself with bench skills):")
     out.append("  - Expert Parallelism (EP) for MoE")
