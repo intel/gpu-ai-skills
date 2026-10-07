@@ -112,4 +112,26 @@ assert r["kv_bytes_per_token_per_rank"] == 5120, r["kv_bytes_per_token_per_rank"
 assert r["decode"]["bytes_moved"] < 0.4 * r["weights_per_rank_bytes"], r["decode"]
 PY
 
+# Sliding-window layers hold KV (GPT-OSS alternates sliding/full); counting
+# only full_attention layers would halve KV and can report a false fit.
+swa_cfg="$tmpdir/swa/config.json"
+mkdir -p "$tmpdir/swa"
+python3 - "$swa_cfg" <<'PY'
+import json, sys
+json.dump({
+    "model_type": "gpt_oss", "hidden_size": 2880, "num_hidden_layers": 24,
+    "num_attention_heads": 64, "num_key_value_heads": 8, "head_dim": 64,
+    "num_local_experts": 32, "num_experts_per_tok": 4,
+    "intermediate_size": 2880, "vocab_size": 201088,
+    "layer_types": ["sliding_attention", "full_attention"] * 12,
+}, open(sys.argv[1], "w"))
+PY
+swa_json=$(python3 "$roof_py" --model "$swa_cfg" --json)
+python3 - "$swa_json" <<'PY'
+import json, sys
+r = json.loads(sys.argv[1])
+# All 24 layers: 2 * 24 * 8 heads * 64 dim * 2 B.
+assert r["kv_bytes_per_token_per_rank"] == 49152, r["kv_bytes_per_token_per_rank"]
+PY
+
 echo "OK model-can-it-fit usable-memory checks passed"

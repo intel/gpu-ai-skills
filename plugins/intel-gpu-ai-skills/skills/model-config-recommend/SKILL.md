@@ -186,8 +186,9 @@ MoE models (expert fields read from the root or `text_config`):
 **active** params (`num_experts_per_tok` experts per layer); weight
 traffic per step counts only the experts a batch routes to, assuming
 uniform routing (`E × (1 − (1 − k/E)^tokens)` distinct experts). Hybrid
-models with `layer_types` (Qwen3.5, Qwen3-Next) count KV only for
-`full_attention` layers.
+models with `layer_types` (Qwen3.5, Qwen3-Next) skip KV for
+linear-attention and Mamba layers; sliding-window layers (GPT-OSS,
+Gemma) still count in full.
 
 MFU (compute efficiency) and BWE (bandwidth efficiency) live in
 `data/hardware.json` as ranges per runtime — see "Worked example"

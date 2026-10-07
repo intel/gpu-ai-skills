@@ -171,10 +171,13 @@ def parse_model_dims(cfg: dict) -> ModelDims:
         shared = 0
     intermediate = intermediate or 4 * (hidden or 0)
 
-    # Hybrid models (Qwen3.5, Qwen3-Next) hold KV only in full-attention
-    # layers; linear-attention layers keep a small fixed-size state instead.
+    # Hybrid models (Qwen3.5, Qwen3-Next) mix in linear-attention layers that
+    # keep a small fixed-size state instead of a KV cache. Sliding-window
+    # layers (GPT-OSS, Gemma) do hold KV, so only linear/Mamba layers are
+    # dropped: under-counting KV is the direction that reports a false fit.
     layer_types = text_cfg.get("layer_types") or []
-    kv_layers = (sum(1 for t in layer_types if t == "full_attention")
+    kv_layers = (sum(1 for t in layer_types
+                     if "linear" not in str(t) and "mamba" not in str(t))
                  if layer_types else num_layers)
     mtp_layers = int(pick("mtp_num_hidden_layers", "num_nextn_predict_layers"))
 
