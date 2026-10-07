@@ -20,6 +20,9 @@ image="${VLLM_XPU_IMAGE:-vllm/vllm-openai-xpu:latest}"
 port=8000
 container_name="vllm-xpu"
 trust_remote_code=0
+xpu_graph=0
+mtp=0
+reasoning_parser=""
 
 usage() {
     cat <<'EOF'
@@ -38,6 +41,9 @@ Options:
   --port N              First host port to publish (default: 8000)
   --container-name N    Base container name (default: vllm-xpu)
   --trust-remote-code   Add --trust-remote-code
+  --xpu-graph           Drop --enforce-eager and enable XPU graph capture (v1 model runner)
+  --mtp N               MTP speculative decoding with N draft tokens (checkpoint must ship an MTP head)
+  --reasoning-parser P  Split thinking output into the `reasoning` field (for example qwen3)
   -h, --help            Show this help
 EOF
 }
@@ -72,13 +78,16 @@ while [ "$#" -gt 0 ]; do
         --port)              port="${2:-}"; shift 2 ;;
         --container-name)    container_name="${2:-}"; shift 2 ;;
         --trust-remote-code) trust_remote_code=1; shift ;;
+        --xpu-graph)         xpu_graph=1; shift ;;
+        --mtp)               mtp="${2:-}"; shift 2 ;;
+        --reasoning-parser)  reasoning_parser="${2:-}"; shift 2 ;;
         -h|--help)           usage; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
 
 [ -n "$model" ] || die "--model is required"
-for v in target_gpu num_xpus ctx dp tp port; do
+for v in target_gpu num_xpus ctx dp tp port mtp; do
     val="${!v}"
     case "$val" in
         ''|*[!0-9]*) die "--${v//_/-} must be a non-negative integer (got: $val)" ;;
@@ -87,6 +96,7 @@ done
 [ "$num_xpus" -ge 1 ] || die "--num-xpus must be >= 1"
 [ "$dp" -ge 1 ] || die "--dp must be >= 1"
 [ "$tp" -ge 1 ] || die "--tp must be >= 1"
+[ -z "$reasoning_parser" ] || check_token "--reasoning-parser" "$reasoning_parser"
 
 if [ -n "$config_file" ] && [ -f "$config_file" ]; then
     parsed=$(awk '
@@ -165,8 +175,16 @@ if [ "$required_xpus" -gt "$num_xpus" ]; then
     die "topology requires $required_xpus XPU(s), but --num-xpus is $num_xpus"
 fi
 
-serve_flags="--enforce-eager \\
-        --block-size=64 \\
+# Eager is the conservative default. With --xpu-graph, dropping --enforce-eager
+# alone is not enough: vLLM-XPU also needs VLLM_XPU_ENABLE_XPU_GRAPH=1, or it
+# logs "XPU Graph is disabled by environment variable" and stays eager.
+if [ "$xpu_graph" -eq 1 ]; then
+    serve_flags="--block-size=64 \\"
+else
+    serve_flags="--enforce-eager \\
+        --block-size=64 \\"
+fi
+serve_flags="$serve_flags
         --max-model-len $ctx \\
         --gpu-memory-utilization 0.85"
 
@@ -204,6 +222,14 @@ if [ "$tp" -gt 1 ]; then
     serve_flags="$serve_flags \\
         --disable-custom-all-reduce \\
         --tensor-parallel-size $tp"
+fi
+if [ -n "$reasoning_parser" ]; then
+    serve_flags="$serve_flags \\
+        --reasoning-parser $reasoning_parser"
+fi
+if [ "$mtp" -gt 0 ]; then
+    serve_flags="$serve_flags \\
+        --speculative-config '{\"method\":\"mtp\",\"num_speculative_tokens\":$mtp}'"
 fi
 
 printf '# Official image: https://hub.docker.com/r/vllm/vllm-openai-xpu; pin a digest for reproducibility.\n'
@@ -244,6 +270,12 @@ while [ "$replica" -lt "$dp" ]; do
     printf '    -e VLLM_WORKER_MULTIPROC_METHOD=spawn \\\n'
     if [ "$tp" -gt 1 ]; then
         printf '    -e CCL_ZE_IPC_EXCHANGE=pidfd \\\n'
+    fi
+    if [ "$xpu_graph" -eq 1 ]; then
+        # vLLM 0.30's default (v2) model runner crashes with XPU graphs at TP>1
+        # and with MTP ("wait ... command graph"); the v1 runner is stable.
+        printf '    -e VLLM_XPU_ENABLE_XPU_GRAPH=1 \\\n'
+        printf '    -e VLLM_USE_V2_MODEL_RUNNER=0 \\\n'
     fi
     printf '    -e HTTP_PROXY -e HTTPS_PROXY -e NO_PROXY \\\n'
     printf '    -e http_proxy -e https_proxy -e no_proxy \\\n'
