@@ -271,6 +271,7 @@ class ModelDims:
     num_shared_experts: int = 0
     first_k_dense_replace: int = 0
     dense_intermediate: int = 0
+    kv_layers: int = 0  # layers that hold a KV cache (== num_layers unless hybrid)
     is_vlm: bool = False
     vision_params: int = 0
 
@@ -441,6 +442,16 @@ def parse_dims(cfg: dict) -> ModelDims:
     if intermediate is None:
         intermediate = 4 * (hidden or 0)
 
+    # Hybrid models (Qwen3.5, Qwen3-Next) interleave linear-attention layers
+    # that keep a small fixed-size state instead of a KV cache. Only linear /
+    # Mamba layers are dropped; sliding-window layers (GPT-OSS, Gemma) still
+    # hold KV, and under-counting KV is the direction that reports a false fit.
+    # Same rule as model-config-recommend's parse_model_dims().
+    layer_types = text_cfg.get("layer_types") or []
+    kv_layers = (sum(1 for t in layer_types
+                     if "linear" not in str(t) and "mamba" not in str(t))
+                 if layer_types else num_layers)
+
     missing = [k for k, v in {
         "hidden_size": hidden, "num_hidden_layers": num_layers,
         "num_attention_heads": num_attn,
@@ -468,6 +479,7 @@ def parse_dims(cfg: dict) -> ModelDims:
         num_shared_experts=int(num_shared_experts),
         first_k_dense_replace=int(first_k_dense_replace),
         dense_intermediate=int(dense_intermediate),
+        kv_layers=int(kv_layers or num_layers),
         is_vlm=is_vlm,
         vision_params=vision_params,
     )
@@ -521,7 +533,8 @@ def count_params(d: ModelDims) -> int:
 
 
 def kv_bytes(d: ModelDims, ctx: int, concurrency: int, kv_dtype: str) -> int:
-    per_token = 2 * d.num_layers * d.num_kv_heads * d.head_dim
+    layers = d.kv_layers or d.num_layers
+    per_token = 2 * layers * d.num_kv_heads * d.head_dim
     return int(per_token * ctx * concurrency * BYTES_PER_KV[kv_dtype])
 
 

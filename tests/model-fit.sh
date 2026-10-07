@@ -101,6 +101,17 @@ grep -q "MoE:       256 experts, 8 per token; 2.93 B active params per token" "$
 grep -q "ships an MTP head" "$moe_rec"
 grep -q -- "--xpu-graph" "$moe_rec"
 
+# model-can-it-fit must agree with the recommender on hybrid-layer KV, since
+# xpu-deploy-plan runs both for the same model.
+python3 - "$moe_cfg" <<'PY'
+import json, sys
+sys.path.insert(0, "plugins/intel-gpu-ai-skills/skills/model-can-it-fit/scripts")
+import fit
+d = fit.parse_dims(json.load(open(sys.argv[1])))
+# 10 of 40 layers hold KV: 2 * 10 * 2 heads * 256 dim * 2 B.
+assert fit.kv_bytes(d, 1, 1, "bf16") == 20480, fit.kv_bytes(d, 1, 1, "bf16")
+PY
+
 roof_py="plugins/intel-gpu-ai-skills/skills/model-config-recommend/scripts/llm_roofline.py"
 roof_json=$(python3 "$roof_py" --model "$moe_cfg" --tensor-parallel 4 --concurrency 8 --json)
 python3 - "$roof_json" <<'PY'

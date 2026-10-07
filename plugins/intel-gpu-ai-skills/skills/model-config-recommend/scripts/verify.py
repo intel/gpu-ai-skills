@@ -60,7 +60,7 @@ def predict_for(model_id: str, device_id: str, runtime: str, ctx: int,
     bench prompt size so predicted-vs-measured is apples-to-apples.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from common import kv_bytes_per_token
+    from common import count_active_params, kv_bytes_per_token, params_touched
     from recommend import (fetch_config, parse_model_dims, count_params,
                            evaluate_fit, _kv_bytes)
     from roofline import factors_from_dict, peak_ops_s, phase_roofline
@@ -79,11 +79,13 @@ def predict_for(model_id: str, device_id: str, runtime: str, ctx: int,
     # Reproduce the recommender's roofline bands for tp=1: prefill latency is
     # the TTFT band, a single decode step is the TPOT band. Match the prompt
     # size the bench actually sends so predicted-vs-measured is apples-to-apples.
-    weight_bytes = params * qmeta["bytes_per_param"]
+    # Same MoE pricing as rank_candidates(): FLOPs scale with the active
+    # experts, weight traffic with the experts the phase's tokens route to.
+    # Both equal the dense values for a dense model.
+    bpp = qmeta["bytes_per_param"]
     kv_per_tok = kv_bytes_per_token(d, _kv_bytes(kv_dtype))
     roof_kwargs = {
-        "params": params,
-        "weight_bytes": weight_bytes,
+        "params": count_active_params(d),
         "kv_bytes_per_token": kv_per_tok,
         "context_tokens": ctx,
         "include_kv": True,
@@ -91,14 +93,16 @@ def predict_for(model_id: str, device_id: str, runtime: str, ctx: int,
         "bandwidth_bytes_per_s": device["memory_bandwidth_gbs"] * 1e9,
         "factors": factors,
     }
-    prefill = phase_roofline(name="prefill", tokens=prompt_tokens or ctx,
-                             batch=1, **roof_kwargs)
+    bench_ctx = prompt_tokens or ctx
+    prefill = phase_roofline(name="prefill", tokens=bench_ctx, batch=1,
+                             weight_bytes=params_touched(d, bench_ctx) * bpp,
+                             **roof_kwargs)
     # Tier 3's bench is single-stream (sequential loop in main()), so predict a
     # single decode step at batch=1 over the bench's working set — NOT the
     # deployment concurrency/ctx that rank_candidates (Tier 1) uses. This makes
     # the TPOT prediction apples-to-apples with the single-stream measurement.
-    bench_ctx = prompt_tokens or ctx
     decode = phase_roofline(name="decode", tokens=1, batch=1,
+                            weight_bytes=params_touched(d, 1) * bpp,
                             **{**roof_kwargs, "context_tokens": bench_ctx})
 
     return {"fit": fit, "ttft_ms": prefill.latency_ms,
