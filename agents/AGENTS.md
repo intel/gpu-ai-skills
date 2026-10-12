@@ -9,6 +9,7 @@ You have additional SKILLs documented in directories containing a "SKILL.md" fil
 
 These skills are:
  - cuda-to-xpu-migration -> "plugins/intel-gpu-ai-skills/skills/cuda-to-xpu-migration/SKILL.md"
+ - enable-xpu-monitoring -> "plugins/intel-gpu-ai-skills/skills/enable-xpu-monitoring/SKILL.md"
  - llamacpp-xpu-run -> "plugins/intel-gpu-ai-skills/skills/llamacpp-xpu-run/SKILL.md"
  - model-can-it-fit -> "plugins/intel-gpu-ai-skills/skills/model-can-it-fit/SKILL.md"
  - model-config-recommend -> "plugins/intel-gpu-ai-skills/skills/model-config-recommend/SKILL.md"
@@ -36,6 +37,8 @@ IMPORTANT: When a SKILL.md points at files under its `references/` directory, yo
 <available_skills>
 
 - cuda-to-xpu-migration: Create a CUDA-to-XPU migration assessment for an existing AI repo. Identify CUDA-specific assumptions, route to the right XPU skills, produce a migration report. Use when the user has a CUDA repo, notebook, Dockerfile, launch script, HF / vLLM / SGLang workload, or Triton kernel and asks to migrate it to Intel Arc / Arc Pro / Battlemage / XPU — including "convert this to XPU" / "move it to XPU" and the bare "migrate this repo" request where scope is not yet set. A request that says "port" routes to xpu-port. Plans and routes only. Not for executing an already-scoped rewrite (use xpu-port), running migrated code, or measuring it.
+
+- enable-xpu-monitoring: Deploy a Prometheus + Grafana + XPU Manager monitoring stack on an Intel GPU host using the intel/xe-full-stack-monitoring repo (plain Docker Compose). Brings up containers for real-time GPU, CPU, and vLLM metrics collection and visualization. Use when the user wants to monitor XPU utilization, temperature, power, memory, or vLLM inference performance.
 
 - llamacpp-xpu-run: Run a GGUF model on an Intel GPU using llama.cpp's SYCL backend (Level Zero) with the official intel.Dockerfile. Covers building the Docker image from source at a pinned tag, launching llama-server with an OpenAI-compatible API, device selection, multi-GPU layer splitting, all recommended runtime env vars, flash-attention, and quantisation selection. Use when the user has a GGUF model and wants fast local inference or an OpenAI-compatible endpoint on Intel GPU without Python/PyTorch. The CUDA analogue is llama.cpp built with `-DGGML_CUDA=ON`. Use **vllm-xpu-run** instead for safetensors models with continuous batching at scale; use **torch-xpu-run** for Hugging Face Transformers direct.
 

@@ -36,6 +36,9 @@ profile:
   - vllm-xpu-profile
   - xpu-profile-unitrace
 
+monitor:
+  - enable-xpu-monitoring
+
 migrate:
   - cuda-to-xpu-migration
   - xpu-port
