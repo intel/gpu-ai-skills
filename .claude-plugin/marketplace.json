@@ -167,6 +167,14 @@
         "./"
       ],
       "description": "Detect whether a Hugging Face model is text generation, text encoder, seq2seq, masked LM, vision classification, vision-language (CLIP), audio encoder, audio seq2seq, multimodal VL, diffusion, time-series, or a reward model before loading it on Intel XPU. Pairs with torch-xpu-run and vllm-xpu-run so the agent picks the right AutoModel class and input kwargs and avoids wrong-input failures after a 20-second load."
+    },
+    {
+      "name": "enable-xpu-monitoring",
+      "source": "./plugins/intel-gpu-ai-skills/skills/enable-xpu-monitoring",
+      "skills": [
+        "./"
+      ],
+      "description": "Deploy a Prometheus + Grafana + XPU Manager monitoring stack on an Intel GPU host using the intel/xe-full-stack-monitoring repo (plain Docker Compose). Brings up containers for real-time GPU, CPU, and vLLM metrics collection and visualization. Use when the user wants to monitor XPU utilization, temperature, power, memory, or vLLM inference performance."
     }
   ]
 }

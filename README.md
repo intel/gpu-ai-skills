@@ -49,6 +49,7 @@ Format follows the [Agent Skills specification](https://agentskills.io/specifica
 | `torch-xpu-profile` | Profile an HF model with `torch.profiler` + Kineto. Export Chrome trace; find hot ops + idle gaps. | "Why is my Qwen2.5 generate() slow on Intel?" |
 | `vllm-xpu-profile` | Profile a running vLLM server via `/start_profile` and `/stop_profile`, or offline `vllm bench --profile`. | "Capture a vLLM-XPU profile around a real-traffic window." |
 | `xpu-profile-unitrace` | SYCL / Level Zero kernel-level profiling with `unitrace` (PTI-GPU; built from source). Per-kernel timing, oneCCL events, HW counters. | "Show me the actual SYCL kernel names taking the time." |
+| `enable-xpu-monitoring` | Deploy Prometheus + Grafana + XPU Manager monitoring with Docker Compose from [intel/xe-full-stack-monitoring](https://github.com/intel/xe-full-stack-monitoring). GPU metrics, vLLM inference metrics (ports 8000–8008 by default), system resources. | "Set up monitoring for my Intel GPU host so I can see utilization and vLLM latency." |
 
 ### Migrate — bring an existing CUDA project over
 
