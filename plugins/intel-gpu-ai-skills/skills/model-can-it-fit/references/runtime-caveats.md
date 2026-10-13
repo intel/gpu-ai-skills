@@ -133,7 +133,8 @@ the `Vision tower` row in the breakdown says which rate it got.
 It does not fully model:
 
 - image-token KV growth from resolution and image count
-- vision encoder activation peaks
+- vision encoder activation peaks under `sglang` and `torch` (under `vllm`
+  the encoder's profiling pass is charged; see below)
 - processor-side memory spikes
 - a `vision_config` stripped of its depth field, which cannot be sized at all.
   `Qwen/Qwen2.5-VL-7B-Instruct-AWQ` ships one: the verdict there covers the LLM
@@ -144,15 +145,14 @@ For tight VLM fits, leave extra headroom. As a planning rule, add about
 1-3 GiB per concurrent image-bearing request, then verify with
 `torch-xpu-bench` at the user's image resolution.
 
-That rule is what covers the non-weight gap, and the gap is measured. Serving
-four Qwen-VL builds on an Arc Pro B70 at `--max-model-len 4096`, vLLM's own
-startup line reported 1.51-1.70 GiB of non-torch memory plus 1.94-1.95 GiB of
-peak activation -- 3.46-3.65 GiB of non-weight overhead, against the 2.55 GiB
-this script carries at that setting (2.00 framework + 0.55 activations). The
-extra ~0.9 GiB is the vision encoder's profiled peak, which the engine measures
-at the model's maximum image size rather than at the image a request actually
-sends. Weights are the part validated to ~2%; the overhead around them is a
-planning allowance on a VLM, not an estimate.
+Under `--runtime vllm` the largest part of that gap is now charged. vLLM
+profiles the vision encoder at the model's maximum image size at startup,
+whatever image a request later sends, and keeps the reservation: 3.8-4.1 GiB
+of non-weight memory on Qwen2.5-VL-7B, Qwen3-VL-8B and Qwen3.5-4B on an Arc
+Pro B70, 2.0 GiB on Gemma-3-4B. The estimate sizes that pass from the
+tower's profiled patch count and MLP width (coverage-and-formulas.md) and
+lands 0.3-0.7 GiB above it. What remains a planning allowance is the
+per-request image traffic beyond that profiled image.
 
 ## Diffusion Caveats
 
@@ -165,14 +165,90 @@ For a floor estimate, point the script at a component config such as the
 UNet or transformer subdirectory. For the real answer, use
 `torch-xpu-bench` with one run and read peak XPU memory.
 
+## Hybrid And Sliding-Window Caveats
+
+For a model with recurrent (state-space) layers, the state pool is charged
+per running request and does not shrink with context. Lowering `--ctx`
+therefore does little for a hybrid model whose state pool dominates;
+lowering `--concurrency` is the lever that works.
+
+Under vLLM a hybrid's state costs more than one copy of it. The state
+shares the attention block pool, so each state page is padded to one
+attention block (vLLM grows the block until it holds a page -- 576 tokens
+on Qwen3.5-4B) and default prefix caching keeps two pages per recurrent
+layer per request. The report prints both figures: the bare state and what
+vLLM reserves. An attention-free model (pure Mamba) has prefix caching off
+and reserves one page.
+
+The state pool is sensitive to `--tp`, and vLLM refuses some degrees
+outright rather than padding: gated delta net, KDA and Mamba2 heads must
+divide the TP degree, and Mamba2 groups must too unless there is a single
+group, which is then replicated to every rank (the assertion in
+`MambaMixer2.__init__`; the shape calculator's group padding only ever runs
+for the single-group case). The TP check reports those launches as
+unlaunchable instead of estimating them.
+
+For a sliding-window model, the per-layer cache is bounded, so the KV
+curve flattens once the context passes the window. Raising `--ctx` past
+that point changes almost nothing, and the reported max context is found
+by search rather than by division.
+
+Switching `--runtime` changes both of these, because the engines size
+their pools differently. SGLang provisions its window pool as a fraction
+of the full-attention pool rather than from the window, and only for the
+architectures it runs as hybrid SWA (gpt-oss, Llama-4, Gemma-4, ...);
+Mistral, Qwen2 and Gemma-2/3 get a full pool there. It forces the SSM half
+of recurrent state to fp32, and it fixes the split between its state pool
+and its KV pool (0.9 : 1 by default), so whichever pool runs short first
+sets the memory both need -- the report charges the difference as
+`Pool split`. The same model can fit under vLLM and not under SGLang.
+
 ## What This Skill Does Not Predict
 
 - measured tokens/sec, TTFT, TPOT, or ITL
 - runtime graph-capture or `torch.compile` buffers
-- prefix-cache buffers when prefix caching is enabled
+- prefix-cache reuse of attention blocks. (The extra recurrent-state page
+  vLLM's prefix caching holds on a hybrid *is* charged.)
+- activation memory under `sglang` and `torch`. Only vLLM's startup
+  reservation is calibrated against the engine; the other two runtimes keep
+  a per-token estimate that grows with `ctx * concurrency`, which is
+  conservative at long contexts.
+- the gap between vLLM's weight-load figure and the checkpoint. The
+  `Weights` row is the checkpoint's bytes (exact to 0.1% on 16 served
+  models, quantized packing aside); vLLM's `Model loading took` runs
+  0.07 GiB above that on text models and up to 0.32 GiB on Qwen VLMs,
+  which the runtime floor covers -- the KV budget still lands at or below
+  the engine's.
+- Gemma-4's encoder reservation. Its tower pools 3x3 before the language
+  model, so vLLM's profiling peak is small (0.27 GiB on E4B); the
+  estimate keeps the generic maximum-image figure and runs about 1.3 GiB
+  conservative there.
+- per-rank activation peaks under tensor parallelism. vLLM's profiled peak
+  is charged whole on every rank, which errs heavy.
+- a non-default `--max-num-batched-tokens` or `--max-num-seqs`. The
+  reservation is sized for vLLM's defaults; a larger batch reserves more
+  (linear in the batch: 0.29 GiB at 2048 tokens, 1.11 GiB at 8192 on
+  Qwen2.5-7B).
 - pipeline-parallel sharding
 - diffusion peak memory
 - correctness or output quality after aggressive quantization
+- block-quantized and group-padded weight layouts. The bytes-per-parameter
+  table folds in a typical scale and zero-point overhead for group size
+  128. A checkpoint with a smaller group, per-block fp8 scales, or padded
+  output dimensions carries a little more than the estimate.
+- quantization recipes stated only in a sidecar file. NVIDIA modelopt
+  checkpoints put the recipe in `hf_quant_config.json`, which the script
+  does not read; pass `--quant` explicitly for those.
+- replicated projector weights on a sharded vision encoder. A multimodal
+  projector or merger that is not tensor-parallel is counted as sharded,
+  which understates the per-device total by up to about 0.16 GB.
+- decode-time bandwidth for hybrid models. A recurrent layer reads a fixed
+  state instead of a growing cache, so its decode cost does not scale with
+  context the way an attention layer's does. That is a throughput question,
+  not a memory one; use a benchmark skill.
+- SGLang's exact slot count. Its state pool is a fixed fraction of free
+  memory (charged here as `Pool split`), so it holds as many slots as fit
+  that fraction, which can be more than the requested concurrency.
 
 Use benchmark/profile skills for measured runtime behavior.
 

@@ -15,7 +15,8 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from common import count_params, fetch_config, kv_bytes_per_token, parse_model_dims
+from common import (active_params, count_params, fetch_config, kv_bytes_per_token, kv_shards,
+                    parse_model_dims)
 from roofline import factors_from_dict, peak_ops_s, phase_roofline
 
 
@@ -73,13 +74,14 @@ def main(argv: list[str] | None = None) -> int:
     cfg = fetch_config(args.model, "llm-roofline/0.1")
     dims = parse_model_dims(cfg)
     params = count_params(dims)
-    params_per_rank = params / args.tensor_parallel
+    # The roofline reads active parameters: one token's experts, no tower.
+    params_per_rank = active_params(dims) / args.tensor_parallel
 
     device = next(d for d in HW["devices"] if d["id"] == args.device)
     quant = HW["quants"][args.quant]
     factors = factors_from_dict(HW["framework_factors"][args.runtime])
     weight_bytes = params_per_rank * quant["bytes_per_param"]
-    kv_per_token = kv_bytes_per_token(dims, kv_dtype_bytes(args.kv_dtype)) / args.tensor_parallel
+    kv_per_token = kv_bytes_per_token(dims, kv_dtype_bytes(args.kv_dtype)) / kv_shards(dims, args.tensor_parallel)
     roof_kwargs = {
         "params": params_per_rank,
         "weight_bytes": weight_bytes,
@@ -125,6 +127,10 @@ def main(argv: list[str] | None = None) -> int:
           f"heads={dims.num_attn_heads}, kv_heads={dims.num_kv_heads}")
     if dims.is_moe:
         print("Note:      MoE config detected; dense param estimate is a coarse bound.")
+    if dims.num_recurrent_layers:
+        print(f"Note:      {dims.num_recurrent_layers} recurrent layer(s) detected; "
+              f"they read a fixed state instead of a growing cache, so this "
+              f"context-scaled decode bound is pessimistic for them.")
     print(f"Device:    {device['name']} ({device['memory_bandwidth_gbs']} GB/s)")
     print(f"Runtime:   {args.runtime}")
     print(f"Quant:     {args.quant} ({quant['bytes_per_param']} B/param, "

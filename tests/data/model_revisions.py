@@ -62,9 +62,27 @@ drop one without checking what stops being covered.
     gpt-oss-20b, gpt-oss-120b        pre-quantized mxfp4, mixed-precision path
     Llama-3.1-8B, Llama-3.3-70B      dense; matched against the HF KV calculator
     Gemma-2-9B, Gemma-2-27B          dense with an explicit head_dim=256
+    Qwen3-Next-80B-A3B               hybrid gated delta net; full_attention_interval
+    Nemotron-H-8B                    hybrid Mamba2; hybrid_override_pattern
+    mamba-130m, falcon-mamba-7b,     pure Mamba1 / Mamba2: no attention heads,
+      Mamba-Codestral-7B             state pool only
+    Mistral-7B-Instruct-v0.1         sliding window applied to every layer
+    DeepSeek-R1-0528-quantized.w4a16 compressed-tensors int4 with `re:` excludes
+    Llama-3.1-8B-Instruct-FP8-dynamic  compressed-tensors fp8 by declared bit width
+    Qwen3-8B-NVFP4 (RedHatAI, nvidia), Llama-3.1-8B-Instruct-NVFP4A16
+                                     4-bit float with group_size 16 is NVFP4,
+                                     not MXFP4
+    Llama-4-Scout-17B-16E            sliding window keyed off `no_rope_layers`
     Qwen2-VL-7B, Qwen2.5-VL-7B       VLM; ViT width from embed_dim, gated tower
     Qwen2-VL-7B-AWQ                  VLM whose exclusion list is ["visual"]
     Qwen2.5-VL-7B-AWQ                VLM whose vision_config has no depth field
+    Qwen3.5-4B                       hybrid gated delta net served on an Arc Pro
+                                     B70: vLLM's padded, doubled state pages
+    gemma-4-E4B                      per-layer input embeddings, audio tower,
+                                     global-head and KV-shared layers
+    Qwen3-VL-4B, Qwen2.5-VL-3B       Qwen patch mergers (deepstack on Qwen3-VL)
+    InternVL3-2B-hf                  list-valued patch_size; video-frame profiling
+    Mistral-Small-24B                a real OOM the verdict must call
 
 Expected results are recorded in the "Layer 3a" section of HOW_TO_TEST.md.
 """
@@ -82,6 +100,28 @@ MODEL_REVISIONS = {
     "mistralai/Mixtral-8x7B-v0.1":        "fc7ac94680e38d7348cfa806e51218e6273104b0",  # 2025-07-24
     "openai/gpt-oss-20b":                 "6cee5e81ee83917806bbde320786a8fb61efebee",  # 2025-08-26
     "openai/gpt-oss-120b":                "b5c939de8f754692c1647ca79fbf85e8c1e70f8a",  # 2025-08-26
+
+    # Hybrid, sliding-window and mixed-precision paths. Pins taken 2026-09-22.
+    "Qwen/Qwen3-Next-80B-A3B-Instruct":   "9c7f2fbe84465e40164a94cc16cd30b6999b0cc7",  # 2025-09-17
+    "nvidia/Nemotron-H-8B-Base-8K":        "94ea861e008c2dfced3e8e1302094024077aa04e",  # 2025-08-21
+    "mistralai/Mistral-7B-Instruct-v0.1": "ec5deb64f2c6e6fa90c1abf74a91d5c93a9669ca",  # 2025-07-24
+    "RedHatAI/DeepSeek-R1-0528-quantized.w4a16":
+                                          "0efe34e82e4612e726c42f6fd44116e0244b33f8",  # 2026-04-28
+    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic":
+                                          "442e7f522277df12f53d63e8384087af31fbfc4b",  # 2026-07-10
+    "unsloth/Llama-4-Scout-17B-16E-Instruct":
+                                          "afd8e498c87bda51c7ea8ec68ea2f7c066e6340b",  # 2025-06-17
+
+    # Pure state-space models. Pins taken 2026-10-02.
+    "state-spaces/mamba-130m-hf":         "1e76775f628fbf1350fbe4dbb3d971ba64af25a1",  # 2024-03-06
+    "tiiuae/falcon-mamba-7b":             "080ad94b3619e2c2d0afa59bafdc6113465b7006",  # 2024-12-17
+    "mistralai/Mamba-Codestral-7B-v0.1":  "4f086c08c1e0f07bdc50ca25125dbbf7475d21da",  # 2025-07-24
+
+    # NVFP4 checkpoints, one per exporter. Pins taken 2026-10-02.
+    "RedHatAI/Qwen3-8B-NVFP4":            "e391349c110709b87bfc2ad2fde3f50dc5839fd8",  # 2025-11-21
+    "parasail-ai/Llama-3.1-8B-Instruct-NVFP4A16":
+                                          "166764ea0872b41d3253efae3639367edf055906",  # 2025-06-26
+    "nvidia/Qwen3-8B-NVFP4":              "ccd10a893cbca613259517c3efe08e151ddf2b8e",  # 2025-09-09
 
     # Gated: fetching config.json returns HTTP 401 without an accepted licence
     # and HF_TOKEN. Tests that need these skip when the fetch fails.
@@ -122,6 +162,25 @@ MODEL_REVISIONS = {
     "Qwen/Qwen2-VL-7B-Instruct-AWQ":      "6ec2560b0afc3a618d4acc9b8e2967d1642f463d",  # 2024-09-25
     "Qwen/Qwen2.5-VL-7B-Instruct":        "cc594898137f460bfe9f0759e9844b3ce807cfb5",  # 2025-04-06
     "Qwen/Qwen2.5-VL-7B-Instruct-AWQ":    "536a35794df8831aa814970ee8f89eff577e7718",  # 2025-04-06
+
+    # Pinned for TestHybridStateOnDevice, which compares per-request KV +
+    # state against the KV pool vLLM-XPU reported when this revision was
+    # served (HYBRID_MEASUREMENT_DATE below). Pin taken 2026-10-05.
+    "Qwen/Qwen3.5-4B":                    "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",  # 2026-03-02
+    # And for TestVllmReservationOnDevice, the VLM rows of vLLM's startup
+    # profiling reservation, served the same day.
+    "Qwen/Qwen3-VL-8B-Instruct":          "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b",  # 2025-10-15
+    "google/gemma-3-4b-it":               "093f9f388b31de276ce2de164bdc2081324b9767",  # 2025-03-21
+
+    # Pinned for TestHoldOutOnDevice: served on HOLDOUT_MEASUREMENT_DATE after
+    # every formula was final, so none of these calibrated anything. The
+    # other hold-out models are pinned above already. Pins taken 2026-10-07.
+    "Qwen/Qwen3-VL-4B-Instruct":          "ebb281ec70b05090aa6165b016eac8ec08e71b17",  # 2025-10-15
+    "Qwen/Qwen2.5-VL-3B-Instruct":        "66285546d2b821cf421d4f5eb2576359d3770cd3",  # 2025-04-06
+    "OpenGVLab/InternVL3-2B-hf":          "cb57a075cb75a2e6d1b668b128d48bb00ae321d2",  # 2025-04-23
+    "google/gemma-4-E4B-it":              "ee0ef6023621cff504d758262d4e04895a5af4a2",  # 2026-07-20
+    "mistralai/Mistral-Small-24B-Instruct-2501":
+                                          "9527884be6e5616bdd54de542f9ae13384489724",  # 2025-07-28
 }
 
 # When the TestMeasuredOnDevice figures were taken on hardware. Kept separate
@@ -134,6 +193,15 @@ MEASUREMENT_DATE = "2026-09-18"   # 2x Intel Arc B-series, vllm/vllm-openai-xpu:
 # other.
 VLM_MEASUREMENT_DATE = "2026-09-23"   # Arc Pro B70 (0xe223), device 1, same image
 
+# The hybrid / sliding-window capacity rows: Arc Pro B70 (0xe223), device 1,
+# vllm/vllm-openai-xpu:v0.30.0 (sha256:fc0e112afb64e3a06fe8daff34652435822a629412f38efce8f0f67a46636b8d),
+# --enforce-eager --block-size 64 --gpu-memory-utilization 0.85.
+HYBRID_MEASUREMENT_DATE = "2026-10-05"
+
+# The 16-model hold-out sweep (TestHoldOutOnDevice): same card, image and
+# flags, VLLM_LOGGING_LEVEL=DEBUG, max-model-len per row.
+HOLDOUT_MEASUREMENT_DATE = "2026-10-07"
+
 
 # Models whose config.json needs an accepted licence + HF_TOKEN to fetch.
 # Informational: the fetch path skips on any 401/403 rather than consulting
@@ -145,6 +213,7 @@ GATED_MODELS = frozenset({
     "meta-llama/Llama-3.3-70B-Instruct",
     "google/gemma-2-9b-it",
     "google/gemma-2-27b-it",
+    "google/gemma-3-4b-it",
 })
 
 # Fetched configs land here. `.gitignore` already ignores `.cache/` at any

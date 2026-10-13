@@ -11,8 +11,12 @@ is covered.
 | Decoder-only LLMs such as Qwen, Llama, Mistral, and Gemma text models | Full estimate | About 5% |
 | MoE models such as Qwen3-MoE, Mixtral, and DeepSeek-V3 | Full estimate, including shared experts | About 10% |
 | Hybrid MoE models such as DeepSeek-V2/V3/V4 and Mistral-Large-3 | Counts dense and MoE layers separately via `first_k_dense_replace` | About 10% |
+| Sliding-window models such as Mistral, Gemma-2/3, gpt-oss, and Llama-4 | Charges windowed layers a bounded cache, per runtime | About 10% |
+| Hybrid state-space models such as Qwen3-Next, Qwen3.5, Nemotron-H, Nemotron-3, Falcon-H1, Jamba, Granite-4-H, Zamba2, Kimi-Linear, and LFM2 | Charges recurrent layers a state pool instead of a KV cache, sized the way each runtime reserves it | About 5% per request on vLLM (measured on Qwen3.5-4B) |
+| Pure state-space models such as Mamba and Mamba2 | State pool only, no KV cache | About 10% |
 | MoE with a separate expert dtype such as DeepSeek-V4-Flash | Three-way split: expert FFNs at `expert_dtype`, embeddings and untied LM head at `bf16`, remaining non-expert weights at `quant_method` | About 5% |
-| VLMs such as Qwen2-VL, Gemma-3 vision, LLaVA, and Nemotron-Omni | Adds the vision tower at its own dtype and supports `text_config` or `llm_config` | About 2% on weights; runtime caveats apply |
+| VLMs such as Qwen2-VL, Qwen3-VL, Gemma-3 vision, InternVL3, LLaVA, and Nemotron-Omni | Adds the vision tower, its patch mergers / projector and position tables at its own dtype; supports `text_config` or `llm_config` | Within 0.5% of the checkpoint on the six VLMs served; runtime caveats apply |
+| Gemma-4 E-series | Adds the per-layer input embeddings, the audio tower, the wider global-attention heads and the KV-shared layers | Within 0.1% of the checkpoint on gemma-4-E4B-it |
 | Mistral `params.json` models | Reads `params.json` when `config.json` is absent | About 10% |
 | Diffusion models | Refuses as a full estimate | Use empirical benchmarking |
 
@@ -23,7 +27,11 @@ The script reads standard Hugging Face `config.json`, Mistral
 ## Core Formula
 
 ```text
-VRAM = weights + kv_cache(ctx, concurrency) + activations + framework
+VRAM = weights
+     + kv_cache(ctx, concurrency)
+     + recurrent_state(concurrency)
+     + activations
+     + framework
 usable_vram = physical_vram * gpu_memory_utilization
 fits = VRAM <= usable_vram
 ```
@@ -41,40 +49,211 @@ attention_per_layer =
   + hidden * kv_proj_dim
   + q_proj_dim * hidden
 
-dense_ffn_per_layer = 3 * hidden * intermediate_size
+ffn_matrices = 3        # gated SwiGLU; 2 for squared-ReLU (Nemotron-H)
+dense_ffn_per_layer = ffn_matrices * hidden * intermediate_size
 moe_ffn_per_layer =
-    num_experts * 3 * hidden * moe_intermediate_size
-  + num_shared_experts * 3 * hidden * moe_intermediate_size
+    num_experts * ffn_matrices * hidden * moe_intermediate_size
+  + num_shared_experts * ffn_matrices * hidden * shared_expert_width
   + hidden * num_experts                    # gate/router projection
+# shared_expert_width: shared_expert_intermediate_size (Qwen3-Next,
+# Qwen2-MoE, which then count one shared expert) or
+# moe_shared_expert_intermediate_size (Nemotron-3), else
+# moe_intermediate_size.
 
-kv_cache =
-  2 * num_layers * num_key_value_heads * head_dim
-  * bytes_per_kv_dtype * ctx * concurrency
+recurrent_per_layer =
+    conv_dim * (conv_kernel - 1)                      # conv state
+  + num_state_heads * state_head_dim_k * state_head_dim_v   # SSM state
 
 vision_tower =                                  # when vision_config is present
     vw = vision_config.embed_dim or vision_config.hidden_size
-    patch_size^2 * num_channels * vw            # patch embedding
+    patch_size^2 * num_channels * temporal_patch_size * vw   # patch embedding
+  + num_position_embeddings * vw                # position table
   + vision_depth * (
         4 * vw * vw                             # ViT attention, square
       + vision_mlp_matrices * vw * vision_intermediate
       + 2 * vw )                                # two LayerNorms
+  + projector                                   # into the language model:
+      # Qwen VL merger: (vw m^2)^2 + vw m^2 * out_hidden, once per deepstack
+      # index plus the final one (109 M params on Qwen3-VL-4B);
+      # Gemma-4: vw * hidden
+
+audio_tower =                                   # Gemma-4 E-series
+    audio_layers * 24 * ah^2 + ah * output_proj_dims + output_proj_dims * hidden
+
+per_layer_embeddings =                          # Gemma-4 / Gemma-3n
+    vocab_size_per_layer_input * num_layers * hidden_size_per_layer_input
+  + 3 * hidden * num_layers * hidden_size_per_layer_input   # projection + gates
 ```
+
+Gemma-4's full-attention layers project to `global_head_dim` (512 against the
+sliding layers' 256, so their Q/O are twice as wide) and are priced
+separately. All of these were checked against the safetensors headers: the
+per-layer tables alone are 2.8 B of gemma-4-E4B-it's 8.0 B params, and
+without them the model was priced 42% light.
+
+The KV cache is charged per layer, not per model, because the three kinds
+of layer cost different amounts:
+
+```text
+kv_per_token_per_layer =
+  2 * num_key_value_heads * head_dim * bytes_per_kv_dtype
+
+kv_cache = concurrency
+  * ( (num_full_attention_layers - kv_shared_full) * ctx * kv_full
+    + (num_sliding_layers - kv_shared_sliding) * window_tokens * kv_sliding )
+```
+
+`kv_full` and `kv_sliding` are each `2 * num_key_value_heads * head_dim *
+bytes_per_kv_dtype` for the layer kind; they differ only on Gemma-4, whose
+global layers use `global_head_dim` (and `num_global_key_value_heads` when
+set). Gemma-4's last `num_kv_shared_layers` layers reuse an earlier layer's
+cache and allocate none (`vllm/model_executor/models/gemma4.py`), so they
+are subtracted by kind: on E4B 18 of 42 layers, leaving 4 full and 20
+sliding layers with a cache -- 0.31 GiB per 8K request, against 0.305
+measured.
+
+`window_tokens` is where the runtimes visibly disagree, so it follows the
+runtime rather than the model:
+
+| Runtime | Tokens a windowed layer holds |
+|---|---|
+| `vllm` | `min(ctx, window - 1 + max_in_flight_tokens)`; a chunked-local layer (Llama-4 `attention_chunk_size`) holds `chunk + max_in_flight_tokens` |
+| `sglang` | `min(ctx, max(window, 0.8 * ctx))` for the architectures SGLang runs as hybrid SWA (gpt-oss, Llama-4, Gemma-4, DeepSeek-V4, ...); `ctx` for every other model |
+| `torch` | `min(ctx, window)` |
+
+vLLM pages the window and cannot free a block until every token in it has
+left the window, so it holds `window - 1` plus the tokens still in flight
+across the current scheduler batches. `max_in_flight_tokens` is twice
+`max_num_batched_tokens`, which vLLM defaults from device memory: 8192 on
+parts at or above 70 GiB, 2048 otherwise. So on Arc Pro hardware a
+windowed layer holds `window - 1 + 4096` tokens.
+
+SGLang does not size its window pool to the window at all. It provisions
+a fraction of the full-attention pool (`--swa-full-tokens-ratio`, default
+0.8) so the radix prefix cache still has blocks to reuse -- and only for
+the architectures `is_hybrid_swa_model` lists. Mistral, Phi-3, Qwen2,
+Cohere2, and Gemma-2/3 (which SGLang opts out explicitly) get one
+full-length pool on every layer, so their window saves nothing there.
+
+Recurrent (state-space) layers hold no KV cache. They hold a fixed state
+per running request that does not shrink with context:
+
+```text
+recurrent_state = recurrent_per_layer * num_recurrent_layers * concurrency
+```
+
+The conv state holds `conv_kernel - 1` columns, not `conv_kernel`: the
+current token is computed rather than cached. Neither engine quantizes
+recurrent state. vLLM keeps it in the model dtype unless the config names
+one (Qwen3.5's `mamba_ssm_dtype`), except that Nemotron-H falls back to
+fp32 and KDA is always fp32; SGLang forces the SSM half to fp32.
+
+What a runtime *reserves* per request is not one bare copy of that state:
+
+| Runtime | State reserved per request |
+|---|---|
+| `vllm`, hybrid model | `2 * num_recurrent_layers * padded_page` |
+| `vllm`, attention-free model | one unpadded copy |
+| `sglang`, `torch` | one copy |
+
+vLLM keeps a hybrid's state in the attention block pool, so the two page
+sizes must match: the attention block grows, in multiples of 64 tokens
+(the pack's `--block-size 64`, and XPU's gated-delta-net rule), until one
+block of one layer's KV is at least one state page, and the state page is
+padded up to that block. Its default prefix caching then runs the mamba
+cache in "align" mode, which holds two pages per recurrent layer per
+request. Measured on Qwen3.5-4B on an Arc Pro B70: a 576-token block and
+108 MiB per request against a 49 MiB state; with the KV it matches the
+pool vLLM reported to within 0.1%. The full-attention KV is rounded up to
+that block too.
+
+SGLang fixes the split between its two hybrid pools instead: the state
+pool gets `ratio / (1 + ratio)` of the memory left after weights
+(`--mamba-full-memory-ratio`, default 0.9) and the KV pool the rest, and
+neither can borrow from the other. A hybrid fits only when both halves
+hold their share, so the report charges the stranded remainder as
+`Pool split`:
+
+```text
+pools = max(kv_cache * (1 + ratio), recurrent_state * (1 + ratio) / ratio)
+pool_split = pools - kv_cache - recurrent_state
+```
+
+Tensor parallelism follows vLLM's state-shape formulas per kind. Gated
+delta net and KDA divide their heads and conv width and refuse a TP that
+splits a head. Mamba1 divides its inner width for both halves. Mamba2
+divides its heads and its groups; when there is a single group it is
+replicated to every rank, so only the `2 * groups * d_state` part of the
+conv stops dividing. vLLM refuses Mamba2 at a TP that does not divide the
+heads, or the groups when there is more than one: `MambaMixer2.__init__`
+(`vllm/model_executor/layers/mamba/mamba_mixer2.py`) asserts
+`num_heads % tp == 0` and `n_groups % tp == 0 or n_groups == 1` before any
+state is allocated. `MambaStateShapeCalculator.mamba2_state_shape` does pad
+an awkward group count, but the layer never gets that far -- 8 groups at
+TP=16 is a refused launch, not a padded one.
+
+Falcon-H1 runs attention and an SSM inside the *same* layer, so every
+layer is charged both a full KV cache and a state. Zamba2 does the same on
+its `hybrid` layers only, which call a few *shared* attention blocks
+(`num_mem_blocks`): each hybrid layer keeps its own KV cache, but the
+attention and MLP weights exist once per shared block.
 
 The script includes embeddings and untied LM head when applicable. For
 hybrid MoE models, dense replacement layers use dense FFN dimensions and
-remaining layers use MoE expert dimensions.
+remaining layers use MoE expert dimensions. Recurrent layers are charged
+their own projection and conv weights instead of Q/K/V/O projections.
 
-Activation memory is a bounded estimate:
+Under `vllm`, activations and framework overhead are what vLLM's own
+startup profiling reserves. vLLM sizes its KV cache once:
+`gpu_memory_utilization` x the total the driver reports, minus everything a
+profiling pass consumed. That pass runs one batch of
+`max_num_batched_tokens` (2048 below 70 GiB) and, for a VLM, the vision
+encoder on a maximum-size dummy image -- so the reservation is fixed by the
+model and the device, and does **not** grow with the context or
+concurrency a launch later serves:
+
+```text
+usable      = device_vram * 0.946 * gpu_memory_utilization  # driver total
+framework   = 1.0 GiB (+0.15 GiB for quantized kernels' workspace)
+            + vision_patches * 20 KiB                       # encoder buffers
+activations = max(
+    batched_tokens * 4 * max(intermediate_size, conv_dim) * 2,  # dense MLP
+    batched_tokens * top_k * 6 * moe_intermediate_size * 2,     # routed experts
+    vision_patches * 4.4 * vision_intermediate_size * 2)        # encoder pass
+vision_patches = 16384 * merge^2      # Qwen-style tower: one max-size image
+               | images * (image_size / patch_size)^2           # fixed-size
+                 tower; images = max(batched_tokens, tokens_per_image)
+                                 // tokens_per_image
+               # InternVL: a video instead, with as many frames as the
+               # context holds -- images = (ctx - tokens_per_image)
+               #                           // tokens_per_image
+```
+
+`tokens_per_image` is `mm_tokens_per_image`, `image_seq_length`, or the
+patch count scaled by `downsample_ratio^2` or the spatial merge. vLLM
+profiled InternVL3-2B at `--max-model-len 8192` with 7,936 encoder tokens
+-- 31 frames of 256 -- so for that family the reservation follows the
+context.
+
+Calibrated on an Arc Pro B70 against vLLM v0.30.0's DEBUG memory-profile
+lines for 13 launches (dense, AWQ, MXFP4 MoE, hybrid, three Qwen VLMs and
+Gemma-3). The driver reports 30.29 GiB of the card's 31.89 GiB (0.950); the
+reservation estimate is conservative by 0.03-0.74 GiB and never optimistic,
+and the transient peak tracks the batch linearly (0.29 GiB at 2048 tokens,
+1.11 GiB at 8192 on Qwen2.5-7B). The previous per-token formula charged
+VLMs ~3 GiB too little -- vLLM profiles the encoder whatever the request
+sends -- and long or concurrent launches several GiB too much. Peaks are
+not divided across TP ranks, which is the safe side.
+
+`sglang` and `torch` keep the earlier estimates, which are not calibrated
+the same way:
 
 ```text
 activations ~= 2 * concurrency * ctx * hidden_size * bytes_per_param + 512 MiB
 ```
 
-Runtime framework overhead is a floor estimate:
-
-| Runtime | Overhead |
+| Runtime | Framework overhead |
 |---|---:|
-| `vllm` | About 2.0 GiB |
 | `sglang` | About 1.5 GiB |
 | `torch` | About 0.8 GiB |
 
@@ -210,12 +389,106 @@ For MoE models, prefer `moe_intermediate_size`, `expert_hidden_dim`, or
 the equivalent MoE-specific FFN field over dense `intermediate_size`.
 Shared experts are always active in addition to routed experts.
 
+Which layers use the sliding window has to come from the config or from a
+known family. A bare `sliding_window` key is not enough on its own:
+DeepSeek-V4-Flash carries `sliding_window: 128` for its sparse-attention
+indexer while every layer still caches the full context. Honouring that
+key would under-estimate its cache eightfold, and under-estimating is the
+direction that reports FITS for a launch that then runs out of memory. So
+a window is applied only when `layer_types`, `sliding_window_pattern`, or
+a known family says which layers use it; otherwise every layer is charged
+full attention. Qwen configs are a special case: they ship a
+`sliding_window` value whether or not it is used, and transformers drops
+it unless `use_sliding_window` is true (the field defaults to false), then
+windows only the layers at index `max_window_layers` and above.
+
+Recurrent-state geometry is normalized across families into one shape:
+`num_state_heads` states of `state_head_dim_k` by `state_head_dim_v`, plus
+a conv state `conv_dim` wide. Gated-delta-net configs (Qwen3-Next) give
+`linear_num_value_heads`, `linear_key_head_dim` and friends; Kimi-Linear
+nests its KDA geometry and layer list under `linear_attn_config`; LFM2's
+short-conv layers give only `conv_L_cache` and hold no SSM state; Mamba2
+configs give `mamba_d_state` and `mamba_d_conv` with the inner width
+stated as `mamba_d_ssm` (Falcon-H1), a head split (Nemotron-H; when both
+are given vLLM allocates the head split, not `expand * hidden`), or an
+expansion factor. In a `hybrid_override_pattern`, `M` is a Mamba layer,
+`*` attention, and `-` and `E` dense and MoE feed-forward layers. When a
+config reports recurrent layers but no geometry resolves, the script
+exits and names the keys it searched rather than guessing a pool that
+often dominates KV.
+
+Quantization is detected from the declared bit width, not from the format
+name. `quant_method` is usually the container ("compressed-tensors",
+"awq", "gptq", "bitsandbytes"), so the width is read from `bits`,
+`w_bit`, `load_in_4bit`, `config_groups[*].weights.num_bits`, or a
+`quant_algo` recipe name. A 4-bit float is `nvfp4` when its group size is
+16 or the config names NVFP4 (`format: nvfp4-pack-quantized`,
+`quant_algo: NVFP4`, AutoRound `data_type: nv_fp`), and `mxfp4` otherwise.
+
+For mixed-precision quantized models, the script reads every spelling of
+the exclusion list: `modules_to_not_convert`, `ignore`, `ignored_layers`,
+`exclude_modules`, `exclude`, and `llm_int8_skip_modules`, plus the
+per-module overrides AutoRound (`extra_config`) and GPTQ (`dynamic`)
+declare. A 16-bit override or a GPTQ `-:` skip is an exclusion; a narrower
+one (Intel's mixed AutoRound exports hold attention, the shared expert and
+the linear-attention projections at 8 bits) is priced at its own width
+when the checkpoint is priced as shipped.
+
+The config never lists the modules a scheme *does* convert, so module
+names are reconstructed and matched the way the engine matches real ones.
+Each is a layer root, a layer index and a member tail, and every part has
+several spellings in use: the same projection is
+`model.layers.3.self_attn.q_proj` in a text checkpoint,
+`language_model.model.layers.3.self_attn.q_proj` in a Llama-4 export and
+`model.language_model.layers.3...` in newer VLMs, and a vision tower's
+names follow its family (`visual.blocks.N.attn.qkv` on Qwen,
+`vision_tower.transformer.layers.N.attention.*` on Pixtral, `self_attn`
+on CLIP/SigLIP). An entry is tried against every spelling. Entries match
+three ways: a `re:` prefix is a prefix-anchored regular expression, a
+pattern containing `*` is a shell glob that also covers child modules, and
+anything else is a module path matched on whole dotted segments -- its
+first segment may close an underscore-joined one, so `attn` covers
+`self_attn`, but `gate` does not reach `gate_proj` or `gate_up_proj`.
+(A raw substring test there prices Mixtral AWQ's experts at bf16 because
+its list names `gate` for the router: 85 GiB for a 23 GiB checkpoint.)
+
+An entry that names one layer covers that layer, not the component: a
+list naming `model.layers.0.mlp.down_proj` keeps one matrix of one layer
+wide. Enumerated lists (Llama-4, Mistral-Small) cover every layer one name
+at a time, and the share they cover is what is priced at full width.
+
+compressed-tensors `config_groups[*].targets` are read as well, as positive
+rules: a component no group targets stays at full width even when no
+exclusion names it. `Linear` selects every linear component; a `re:` or
+module-name target is matched like an exclusion entry; any other class name
+selects nothing. When the checkpoint is priced as shipped, each component
+takes its own group's width.
+
+Some components are treated as structural rather than probed:
+
+- Embedding tables are full precision. Every scheme here targets `Linear`
+  modules and `nn.Embedding` is not one. (compressed-tensors can quantize
+  an embedding that a config group targets by name; that is rare and not
+  modeled, and pricing it wide is the safe direction.)
+- MoE routers are full precision. vLLM builds every router it ships
+  (DeepSeek, Mixtral, Qwen-MoE, gpt-oss, Llama-4) without a quant config,
+  so a `Linear` target does not reach it.
+- An `mxfp4` checkpoint quantizes only its experts: vLLM's MXFP4 method
+  leaves every Linear layer unquantized.
+- The output projection is full precision unless the config asks for it,
+  either with an explicit `lm_head: true` or a `config_groups` entry whose
+  `targets` match it. An exclusion entry naming it wins either way.
+  (ModelOpt quantizes the head unless it is excluded; its recipe lives in
+  `hf_quant_config.json`, which the script does not read.)
+
+The script prints a component-level weight breakdown whenever any
+component differs from the uniform quantized rate.
+
 Router (gate) projections are counted as `hidden * num_experts` per MoE
 layer -- one linear layer scoring every routed expert, and no gate for the
 always-on shared experts. That is 0.04% of DeepSeek-V4-Flash, so it barely
-moves a uniform estimate, but it is what a `modules_to_not_convert` list
-naming routers holds at `bf16` while the rest goes to 4-bit, and the uplift
-is priced on this count.
+moves a uniform estimate, but it is held at `bf16` while the rest goes to
+4-bit, and the uplift is priced on this count.
 
 A VLM's vision tower is sized from `vision_config`, whose field names do not
 mean the same thing across families:
@@ -324,12 +597,10 @@ config mechanisms express that, and a model may use both:
 
 **1. `quantization_config.modules_to_not_convert`** (e.g.
 openai/gpt-oss-20b) names components held at full precision while the
-rest is quantized. The script recognizes embeddings, attention, router, and
-vision entries. Routers are matched under both spellings in the wild --
-`router` (gpt-oss's `mlp.router`) and `gate` as a whole path segment
-(Mixtral's `block_sparse_moe.gate`, DeepSeek and Qwen3-MoE's `mlp.gate`) --
-while `gate_proj` and `gate_up_proj` are left as the dense SwiGLU
-projections they are.
+rest is quantized. Entries are matched per component and per layer, as
+described under Important Modeling Details: `gate` as a whole path segment
+is Mixtral's `block_sparse_moe.gate` router, while `gate_proj` and
+`gate_up_proj` stay the dense SwiGLU and expert projections they are.
 
 The vision tower is priced by that list, not by the embedding rule: a ViT is
 Linear layers, so a quantizer converts it unless the list excludes it. Qwen2-VL
@@ -337,8 +608,8 @@ and Qwen2.5-VL AWQ builds list exactly `["visual"]`, which holds the whole
 tower at `bf16` while the backbone goes to 4-bit -- 2.92 GiB of the 6.55 GiB
 estimate for `Qwen/Qwen2-VL-7B-Instruct-AWQ`, against 6.45 GiB on disk. A list
 that names only the backbone's own components leaves the tower at the
-quantized rate. `visual`, `vision_tower` and `vision_model` are all matched,
-including as a `re:` pattern.
+quantized rate. `visual`, `model.visual`, `vision_tower` and `vision_model`
+are all matched, including as a `re:` pattern.
 
 **2. A separate `expert_dtype`** (e.g. deepseek-ai/DeepSeek-V4-Flash)
 gives the MoE expert FFNs their own dtype. DeepSeek-V4-Flash declares
@@ -407,6 +678,23 @@ and Mistral-Large-3 style `params.json` configs.
 Multimodal coverage includes Qwen2-VL and Qwen2.5-VL (bf16 and AWQ builds),
 Gemma vision configs, LLaVA-like configs, and Nemotron-Omni style `llm_config`
 layouts.
+
+Sliding-window coverage includes Mistral and Ministral, Gemma-2 and
+Gemma-3 (including configs that leave the head counts to the class
+defaults), Cohere2, gpt-oss, Llama-4 chunked attention, Phi-3, and Qwen
+configs that set `use_sliding_window`.
+
+Hybrid and state-space coverage includes Qwen3-Next and Qwen3.5 gated
+delta net, Nemotron-H and Nemotron-3, Jamba, Falcon-H1 parallel layers,
+Zamba2 shared-attention layers, Granite-4-H, Kimi-Linear and Ling-3.0 KDA,
+LFM2 short convolution, and pure Mamba/Mamba2 configs. Bamba and
+MiniMax-Text-01 configs parse, but vLLM no longer serves them (removed in
+0.23).
+
+Mixed-precision coverage includes compressed-tensors `config_groups` with
+`re:` targets, AWQ and GPTQ `modules_to_not_convert`, bitsandbytes
+`llm_int8_skip_modules`, and MXFP4 checkpoints such as gpt-oss where the
+router and attention stay at full precision.
 
 ## Validation
 
