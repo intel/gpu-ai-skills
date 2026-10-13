@@ -129,6 +129,7 @@ The script invokes these skills in order and HALTS on a hard failure:
 | Grammar-constrained generation | SGLang-XPU | **sglang-xpu-run** |
 | Pure Transformers code path | PyTorch XPU | **torch-xpu-run** |
 | Diffusion / custom HF pipeline | PyTorch XPU | **torch-xpu-run** |
+| Tune a PyTorch module or pipeline and save it | Torch Tweak | **torch-tweak** |
 | "How much VRAM?" | Sizing tool | **model-can-it-fit** |
 | "Best vLLM config?" | Recommender | **model-config-recommend** |
 
@@ -154,6 +155,8 @@ the observed response summary to the user:
   runtime triage skill own those.
 - Performance root-cause analysis — bench / profile skills in order:
   runtime bench, runtime profile, **xpu-profile-unitrace**.
+- Tuning a module across OpenVINO, TorchAO, and Inductor —
+  **torch-tweak**. This planner does not chain that skill.
 
 ## Reporting
 

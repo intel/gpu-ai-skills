@@ -21,6 +21,9 @@ run:
   - sglang-xpu-run
   - llamacpp-xpu-run
 
+tune:
+  - torch-tweak
+
 plan:
   - model-can-it-fit
   - model-config-recommend

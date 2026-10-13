@@ -5,6 +5,10 @@ models, paste these and adapt. Same procedure as the main bench:
 pin device, reset peak memory, warm up, synchronise around the
 timer, report median.
 
+These snippets measure a path you already chose. To search OpenVINO,
+TorchAO, and Torch Inductor and keep the fastest module, use the
+**torch-tweak** skill.
+
 ## Diffusion (SDXL / Flux / SD)
 
 ```python

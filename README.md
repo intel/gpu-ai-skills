@@ -1,6 +1,6 @@
 # Intel GPU AI Skills
 
-A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for setting up, running, benchmarking, and profiling arbitrary Hugging Face safetensors and GGUF models on Intel GPUs (Arc, Arc Pro, Battlemage). Covers the PyTorch + Transformers, vLLM-XPU, SGLang-XPU, and llama.cpp-SYCL stacks, plus CUDA to XPU migration.
+A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for setting up, running, benchmarking, and profiling arbitrary Hugging Face safetensors and GGUF models on Intel GPUs (Arc, Arc Pro, Battlemage). Covers the PyTorch + Transformers, vLLM-XPU, SGLang-XPU, and llama.cpp-SYCL stacks, plus CUDA to XPU migration and Torch Tweak module tuning.
 
 Format follows the [Agent Skills specification](https://agentskills.io/specification).
 
@@ -34,6 +34,12 @@ Format follows the [Agent Skills specification](https://agentskills.io/specifica
 | `sglang-xpu-run` | Serve a model with SGLang's XPU backend (`--device xpu --attention-backend intel_xpu`). RadixAttention prefix caching. | "Serve Qwen3 with sglang on my Battlemage GPU." |
 | `llamacpp-xpu-run` | Run a GGUF model via llama.cpp's SYCL backend with an OpenAI-compatible `llama-server`; no Python/PyTorch required. | "Serve this GGUF model locally on my Arc GPU with llama.cpp." |
 
+### Tune — compile a PyTorch module
+
+| Skill | Useful for | Example prompt |
+|-------|------------|----------------|
+| `torch-tweak` | Tune a general PyTorch module or pipeline by comparing OpenVINO, TorchAO, Torch Inductor, and eager, then save the fastest checkpoint. Not a serving stack. | "Tune this ResNet for inference on my Intel GPU." |
+
 ### Benchmark — measure how fast
 
 | Skill | Useful for | Example prompt |
@@ -58,7 +64,7 @@ Format follows the [Agent Skills specification](https://agentskills.io/specifica
 | `cuda-to-xpu-migration` | Assess a CUDA repo, notebook, Dockerfile, or launch script; produce a migration report and route to the right XPU skills. Plans and routes only. | "Migrate this CUDA training repo to Intel XPU." |
 | `xpu-port` | Execute a single-target CUDA → XPU port: libcst-based scan, mechanical rewrite, and CPU FP64 vs. target-dtype correctness verification. | "Port my repo at ./my-model to XPU now." |
 
-The descriptions are designed to disambiguate by *deployment shape*: "benchmark X" alone is intentionally ambiguous (which framework?), so a good agent will ask whether you mean PyTorch / vLLM / sglang before picking. If you want to be explicit, mention the skill by name: *"Use the **vllm-xpu-bench** skill to ..."*.
+The descriptions are designed to disambiguate by *deployment shape*: "benchmark X" alone is intentionally ambiguous (which framework?), so a good agent will ask whether you mean PyTorch / vLLM / sglang before picking. "Tune this model" routes to `torch-tweak`, not to `torch-xpu-run` or `vllm-xpu-run`. If you want to be explicit, mention the skill by name: *"Use the **vllm-xpu-bench** skill to ..."*.
 
 ## Installing
 
@@ -208,6 +214,7 @@ For deeper testing — install round-trip, per-skill acceptance, end-to-end smok
 - [huggingface/skills](https://github.com/huggingface/skills) — Hub workflows
 - [PyTorch XPU getting started](https://docs.pytorch.org/docs/stable/notes/get_start_xpu.html)
 - [vLLM XPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/?device=xpu)
+- [Torch Tweak](https://github.com/intel/torch-tweak) — module tuning (OpenVINO, TorchAO, Inductor)
 
 ## License
 
