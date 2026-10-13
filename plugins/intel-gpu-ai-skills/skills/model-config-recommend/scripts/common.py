@@ -129,6 +129,11 @@ class ModelDims:
     vocab: int
     tied: bool
     is_moe: bool
+    num_experts: int = 0
+    num_experts_per_tok: int = 0
+    shared_intermediate: int = 0
+    kv_layers: int = 0
+    mtp_layers: int = 0
 
 
 def parse_model_dims(cfg: dict) -> ModelDims:
@@ -143,10 +148,38 @@ def parse_model_dims(cfg: dict) -> ModelDims:
     head_dim = text_cfg.get("head_dim") or cfg.get("head_dim")
     if head_dim is None:
         head_dim = hidden // num_attn if (hidden and num_attn) else 0
-    intermediate = text_cfg.get("intermediate_size") or 4 * (hidden or 0)
     vocab = text_cfg.get("vocab_size", cfg.get("vocab_size", 32000))
     tied = bool(text_cfg.get("tie_word_embeddings", cfg.get("tie_word_embeddings", False)))
-    is_moe = bool(cfg.get("num_local_experts") or cfg.get("num_experts"))
+
+    # MoE fields live under text_config for multimodal wrappers (Qwen3.5), so
+    # check there before the root.
+    def pick(*keys):
+        for src in (text_cfg, cfg):
+            for k in keys:
+                if src.get(k):
+                    return src[k]
+        return 0
+
+    num_experts = int(pick("num_local_experts", "num_experts", "n_routed_experts"))
+    is_moe = num_experts > 1
+    if is_moe:
+        intermediate = pick("moe_intermediate_size") or text_cfg.get("intermediate_size")
+        shared = int(pick("shared_expert_intermediate_size")
+                     or pick("n_shared_experts") * (intermediate or 0))
+    else:
+        intermediate = text_cfg.get("intermediate_size")
+        shared = 0
+    intermediate = intermediate or 4 * (hidden or 0)
+
+    # Hybrid models (Qwen3.5, Qwen3-Next) mix in linear-attention layers that
+    # keep a small fixed-size state instead of a KV cache. Sliding-window
+    # layers (GPT-OSS, Gemma) do hold KV, so only linear/Mamba layers are
+    # dropped: under-counting KV is the direction that reports a false fit.
+    layer_types = text_cfg.get("layer_types") or []
+    kv_layers = (sum(1 for t in layer_types
+                     if "linear" not in str(t) and "mamba" not in str(t))
+                 if layer_types else num_layers)
+    mtp_layers = int(pick("mtp_num_hidden_layers", "num_nextn_predict_layers"))
 
     missing = [k for k, v in {"hidden_size": hidden, "num_hidden_layers": num_layers,
                               "num_attention_heads": num_attn}.items() if not v]
@@ -154,28 +187,64 @@ def parse_model_dims(cfg: dict) -> ModelDims:
         sys.exit(f"config.json missing {missing}; not a decoder-only LLM.")
     return ModelDims(family, int(hidden), int(num_layers), int(num_attn),
                      int(num_kv), int(head_dim), int(intermediate),
-                     int(vocab), tied, is_moe)
+                     int(vocab), tied, is_moe,
+                     num_experts=num_experts if is_moe else 0,
+                     num_experts_per_tok=int(pick("num_experts_per_tok")) if is_moe else 0,
+                     shared_intermediate=shared,
+                     kv_layers=int(kv_layers or num_layers),
+                     mtp_layers=mtp_layers)
 
 
-def count_params(dims: ModelDims) -> int:
-    """Estimate dense decoder params from config shape.
+def count_params(dims: ModelDims, experts: int | None = None) -> int:
+    """Estimate decoder params from config shape.
 
     This is the same approximation used by the recommender. It is config
     driven, so it scales to larger models without hand-entered layer counts.
+    For MoE models, ``experts`` is how many routed experts to count per layer:
+    all of them (the default) for memory, ``num_experts_per_tok`` for the
+    params one token touches.
     """
     h = dims.hidden
     q_proj = dims.head_dim * dims.num_attn_heads
     kv_proj = dims.head_dim * dims.num_kv_heads
     attn = h * q_proj + h * kv_proj + h * kv_proj + q_proj * h
-    ff = 3 * h * dims.intermediate
+    if dims.is_moe:
+        n = dims.num_experts if experts is None else experts
+        router = h * dims.num_experts
+        ff = n * 3 * h * dims.intermediate + 3 * h * dims.shared_intermediate + router
+    else:
+        ff = 3 * h * dims.intermediate
     norms = 4 * h
     emb = dims.vocab * h
     head = 0 if dims.tied else dims.vocab * h
     return emb + head + dims.num_layers * (attn + ff + norms)
 
 
+def count_active_params(dims: ModelDims) -> int:
+    """Params one token runs through (equals count_params for dense models)."""
+    if not dims.is_moe:
+        return count_params(dims)
+    return count_params(dims, experts=dims.num_experts_per_tok)
+
+
+def params_touched(dims: ModelDims, tokens: int) -> int:
+    """Params whose weights a forward pass over ``tokens`` tokens must read.
+
+    Dense models read every weight. An MoE layer reads only the experts the
+    tokens route to: with uniform routing, ``tokens`` tokens choosing k of E
+    experts touch E * (1 - (1 - k/E) ** tokens) distinct experts.
+    """
+    total = count_params(dims)
+    if not dims.is_moe or dims.num_experts_per_tok <= 0:
+        return total
+    e, k = dims.num_experts, dims.num_experts_per_tok
+    touched = e * (1 - (1 - k / e) ** max(tokens, 1))
+    return count_params(dims, experts=min(e, max(k, round(touched))))
+
+
 def kv_bytes_per_token(dims: ModelDims, kv_dtype_bytes: float) -> int:
-    return int(2 * dims.num_layers * dims.num_kv_heads * dims.head_dim * kv_dtype_bytes)
+    layers = dims.kv_layers or dims.num_layers
+    return int(2 * layers * dims.num_kv_heads * dims.head_dim * kv_dtype_bytes)
 
 
 def docker_image_id(image: str) -> str:

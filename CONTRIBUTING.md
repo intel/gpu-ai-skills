@@ -168,7 +168,8 @@ The repo static gate verifies:
   `name` matches its directory
 - Python helper scripts compile and shell scripts parse
 - mocked integration checks pass for `xpu-runtime-preflight`,
-  `model-can-it-fit`, `xpu-port`, and skill routing
+  `model-can-it-fit`, `vllm-xpu-run` launch flags, `xpu-port`, and
+  skill routing
 - `agents/AGENTS.md` matches the generator output
 - every skill appears in `catalog/bundles.yaml`
 - Claude marketplace entries cover every skill

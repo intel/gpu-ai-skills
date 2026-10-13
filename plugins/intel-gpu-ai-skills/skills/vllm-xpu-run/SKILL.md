@@ -51,7 +51,7 @@ general vLLM, CUDA, or Transformers support.
 | `vllm/vllm-openai:latest` | `vllm/vllm-openai-xpu:latest` |
 | `--gpus all` | `--device /dev/dri` + `-v /dev/dri/by-path:/dev/dri/by-path:ro` + `--ipc=host` |
 | `--dtype auto` | `--dtype bfloat16` (explicit) |
-| CUDA graphs default | `--enforce-eager` |
+| CUDA graphs default | `--enforce-eager` first; then XPU graphs (`emit_launch.sh --xpu-graph`) |
 | `--tensor-parallel-size N` | same; pin N XPUs in `ZE_AFFINITY_MASK` |
 
 ## Quickstart (single GPU)
@@ -114,7 +114,8 @@ remote-box workflow), see `references/remote-deploy.md`.
 | Flag | Why |
 |---|---|
 | `--dtype bfloat16` | Battlemage runs bf16 better than fp16; `auto` may pick fp16 from the checkpoint config. Set for unquantized serving only — combining with `--quantization` produces conflicts. |
-| `--enforce-eager` | Conservative default. Graph capture / `torch.compile` on XPU is experimental. After a stable eager run, drop it and re-bench; keep only if TPOT/TTFT improve and content stays correct. |
+| `--enforce-eager` | Conservative default for the first launch. After a stable eager run, switch to XPU graphs with `emit_launch.sh --xpu-graph` and re-bench; keep graphs if TPOT/TTFT improve and content stays correct. Dropping `--enforce-eager` alone does nothing: without `VLLM_XPU_ENABLE_XPU_GRAPH=1` the log says `XPU Graph is disabled by environment variable` and decode stays eager. |
+| `--reasoning-parser qwen3` | Set for thinking models (Qwen3, Qwen3.5). Without it the thinking text and `</think>` land in `content`; with it they move to the `reasoning` field. |
 | `--block-size=64` | Validated default for the XPU paged-attention path on Battlemage. Bench higher (128, 256) once 64 is correct. |
 | `--gpu-memory-utilization 0.85` | Default 0.92 fails on workstations with active GUI sessions. Drop to 0.70 with browsers open; raise to 0.92 on headless servers. |
 | `-v /dev/dri/by-path:/dev/dri/by-path:ro` | Some oneCCL/device-discovery configurations scan the host's `/dev/dri/by-path` symlinks even for a single-GPU launch. Include this read-only mount to support those configurations; if it is omitted, affected images can abort at engine initialization with `opendir failed: could not open device directory`. |
@@ -144,6 +145,8 @@ docker logs <name> 2>&1 | grep -i "Unknown vLLM environment"   # must be empty
 | `VLLM_LOGGING_LEVEL=DEBUG` | Verbose engine logs. |
 | `VLLM_WORKER_MULTIPROC_METHOD=spawn` | Required — `fork` deadlocks oneCCL init on XPU. |
 | `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` | Set when extending RoPE past the model card's default. |
+| `VLLM_XPU_ENABLE_XPU_GRAPH=1` | Turns on XPU graph capture. Use with no `--enforce-eager`. Measured ~3× decode throughput on Qwen3.5-35B-A3B, 4× Arc Pro B70, vLLM 0.30. |
+| `VLLM_USE_V2_MODEL_RUNNER=0` | Use with XPU graphs. vLLM 0.30's default v2 runner crashed with graphs at TP=4 and with MTP (`wait method cannot be used for an event associated with a command graph`); the v1 runner is stable and ~3–4% slower. |
 | `VLLM_MLA_DISABLE=1` | Workaround for MLA models (DeepSeek-V2/V3, MiniMax-Text-01); no-op otherwise. |
 
 ## Quantization, attention backend selection
@@ -158,8 +161,8 @@ specifics.
 See `references/multi-gpu-and-tuning.md` for tensor parallel,
 oneCCL / XCCL collective env vars, `--block-size` /
 `--max-num-batched-tokens` sweeps, speculative decoding
-(EAGLE3 / MTP / n-gram), and legacy env-var aliases for older
-images.
+(EAGLE3 / MTP / n-gram, including Qwen3.5 MTP), XPU graphs, and
+legacy env-var aliases for older images.
 
 ### Attention backend gotcha (read before quantising)
 

@@ -181,6 +181,15 @@ single_stream_decode_tok_s = (mem_bw / weights_bytes) × BWE   # memory-bound
 TPOT_at_concurrency        = step time including KV traffic at (ctx, concurrency)
 ```
 
+MoE models (expert fields read from the root or `text_config`):
+`weights` and fit use **all** experts; prefill/decode FLOPs use the
+**active** params (`num_experts_per_tok` experts per layer); weight
+traffic per step counts only the experts a batch routes to, assuming
+uniform routing (`E × (1 − (1 − k/E)^tokens)` distinct experts). Hybrid
+models with `layer_types` (Qwen3.5, Qwen3-Next) skip KV for
+linear-attention and Mamba layers; sliding-window layers (GPT-OSS,
+Gemma) still count in full.
+
 MFU (compute efficiency) and BWE (bandwidth efficiency) live in
 `data/hardware.json` as ranges per runtime — see "Worked example"
 below for why bands are wide. Roofline reference: Williams,
@@ -241,7 +250,11 @@ your image, then `verify.py` to collapse to a measurement.
 - Expert Parallelism (EP) for MoE — workload-specific. Bench
   `--enable-expert-parallel` against `--tensor-parallel-size N`.
 - Speculative decoding speedup (n-gram, EAGLE, EAGLE3, MTP) —
-  depends on draft accuracy on the target distribution.
+  depends on draft accuracy on the target distribution. When the
+  config ships an MTP head (`mtp_num_hidden_layers`,
+  `num_nextn_predict_layers`), the output says so under "Next steps".
+- XPU graph speedup. The emitted launch line is eager; the output's
+  "Next steps" points to `emit_launch.sh --xpu-graph` to re-bench.
 - Tuning knobs `--block-size`, `--max-num-batched-tokens`,
   `--max-num-seqs` — emitted as starting points, sweep with
   **vllm-xpu-bench**.

@@ -92,19 +92,55 @@ Procedure: start at `--block-size=64` (correctness), bench, sweep
 `--max-num-batched-tokens` in `[max-model-len, 4× max-model-len]`.
 Lock per model.
 
+## XPU graphs
+
+The biggest single decode win after a stable eager run. It needs two
+settings plus the v1 model runner:
+
+```sh
+-e VLLM_XPU_ENABLE_XPU_GRAPH=1 \
+-e VLLM_USE_V2_MODEL_RUNNER=0 \
+...                               # and no --enforce-eager
+```
+
+`scripts/emit_launch.sh --xpu-graph` emits all three. Measured on
+Qwen3.5-35B-A3B, 4× Arc Pro B70, TP=4, vLLM 0.30, 8 users: eager
+~140 tok/s, graphs ~394 tok/s. Removing `--enforce-eager` without the
+env var gave 132 tok/s (no change). Startup takes longer while graphs
+are captured. Confirm the log does **not** say
+`XPU Graph is disabled by environment variable`.
+
+The v1 runner is needed because vLLM 0.30's v2 runner crashed with
+graphs at TP=4 (intermittently, on the first requests) and with MTP
+(at engine init): `wait method cannot be used for an event associated
+with a command graph`. Re-check on newer images.
+
 ## Speculative decoding
 
 Methods: **n-gram** (cheap, no draft model), **EAGLE**, **EAGLE3**
 (start here when an EAGLE3 head exists), **MTP** (DeepSeek-MTP,
-GLM-OCR-MTP). CLI shape varies by vLLM version — check
+GLM-OCR-MTP, Qwen3.5). CLI shape varies by vLLM version — check
 `vllm serve --help=all | grep -i speculative`.
+
+A checkpoint ships an MTP head when its config has
+`mtp_num_hidden_layers` (Qwen3.5) or `num_nextn_predict_layers`
+(DeepSeek, GLM). No separate draft model is needed.
 
 ```sh
 # n-gram
 vllm serve <target> ... --speculative-method ngram --num-speculative-tokens 3
 # EAGLE3 (newer JSON form)
 vllm serve <target> ... --speculative-config '{"method":"eagle3","num_speculative_tokens":3}'
+# MTP (head ships in the checkpoint); emit_launch.sh --mtp 2 emits this
+vllm serve <target> ... --speculative-config '{"method":"mtp","num_speculative_tokens":2}'
 ```
+
+Measured on Qwen3.5-35B-A3B, 4× Arc Pro B70, TP=4, vLLM 0.30, with
+XPU graphs: MTP-2 added +27% throughput on real text (404 → 513
+tok/s) and ~10–26% on random-token prompts. Acceptance, and so the
+gain, depends on the prompts: bench on representative text. Full
+working launch: `emit_launch.sh --model Qwen/Qwen3.5-35B-A3B --num-xpus 4
+--tp 4 --ctx 32768 --xpu-graph --mtp 2 --reasoning-parser qwen3`.
 
 Bench with and without spec-decode on the same model and
 concurrency. Keep only if TPOT improves without TTFT regression.
