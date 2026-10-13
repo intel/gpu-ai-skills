@@ -1,6 +1,6 @@
 ---
 name: torch-tweak
-description: "Tune a PyTorch nn.Module or pipeline for Intel GPU inference with Torch Tweak (https://github.com/intel/torch-tweak). Compare OpenVINO, TorchAO, Torch Inductor, and eager, keep the fastest correct backend, and save a .tt checkpoint. Use when the user asks to tune, optimize, compile, or convert a general PyTorch model such as ResNet, BERT, diffusion, speech, or a custom module, and is not asking for an OpenAI server. Trigger phrases include \"tune this model\", \"optimize inference\", \"compile with OpenVINO\", and \"torch-tweak\". Not for vLLM or SGLang serving (use vllm-xpu-run or sglang-xpu-run), not for loading a Hugging Face model in eager PyTorch (use torch-xpu-run), and not for measuring an already chosen generate() path (use torch-xpu-bench)."
+description: "Tune a PyTorch nn.Module or pipeline for Intel GPU inference with Torch Tweak (https://github.com/intel/torch-tweak). Compare OpenVINO, TorchAO, Torch Inductor, and eager, keep the fastest correct backend, and save a .tt checkpoint. It looks at the input samples you pass and finds which sizes are the batch and which sizes can change. You can tune each submodule with its own strategy. Use when the user asks to tune, optimize, compile, or convert a general PyTorch model such as ResNet, BERT, diffusion, speech, or a custom module, and is not asking for an OpenAI server. Trigger phrases include \"tune this model\", \"optimize inference\", \"compile with OpenVINO\", and \"torch-tweak\". Not for vLLM or SGLang serving (use vllm-xpu-run or sglang-xpu-run), not for loading a Hugging Face model in eager PyTorch (use torch-xpu-run), and not for measuring an already chosen generate() path (use torch-xpu-bench)."
 ---
 
 # torch-tweak
@@ -10,6 +10,10 @@ description: "Tune a PyTorch nn.Module or pipeline for Intel GPU inference with 
 backends, checks the tuned module, and can save the result. It is
 pre-release (pre-1.0). Tell the user that before installing. The API
 can change.
+
+It looks at the samples you pass and marks which sizes are the batch
+and which sizes can change. You can tune each submodule with its own
+strategy. See **Input shapes** and **Tune each submodule on its own**.
 
 Use it for a general PyTorch model or pipeline that has no serving
 stack: vision, encoders, speech, diffusion, or a custom module.
@@ -139,8 +143,9 @@ tt.tune(module, sample, batch_sizes=[1, 4], device=device)
 tt.save(module, "tuned_mlp.tt")
 ```
 
-Replace the MLP and `sample` with the user's module. The sample's last
-dimension has to match the module. After `tune`, call the module for
+Replace the MLP and `sample` with the user's module. The sample must
+be a real input to that module's `forward`. A ResNet takes an image
+such as `torch.rand(3, 224, 224)`, not a 1-D vector. After `tune`, call the module for
 inference in this process, then `save`. Load later with `tt.load` on a
 fresh copy of the same module:
 
@@ -150,6 +155,37 @@ tt.load(module, "tuned_mlp.tt")
 ```
 
 Deploy the `.tt` file on the same hardware used for tuning.
+
+## Input shapes
+
+Pass at least two batch sizes, for example `batch_sizes=[1, 4]`.
+Torch Tweak runs the module on those samples and compares the shapes.
+
+- A size that grows when the batch size grows is a batch axis.
+- A size that changes for another reason is a dynamic axis. Sequence length is a common one.
+- A size that never changes is static.
+
+Same number of dimensions, different sizes: one graph. Torch Tweak keeps the dynamic sizes.
+A different number of dimensions, or different non-tensor arguments: a new graph. That graph is tuned on its own.
+
+Use samples that look like the real inputs. Later inputs must follow the same pattern of batch, dynamic, and static sizes.
+
+## Tune each submodule on its own
+
+`tt.inspect` lists the submodules. `tt.wrap(..., strategy=strategy)` puts that one strategy on every wrapped submodule.
+
+To use a different strategy for each submodule, wrap each one yourself. A submodule you do not wrap stays eager.
+
+```python
+modules_info = tt.inspect(pipe, input_data)
+modules_info.describe()
+
+pipe.unet = tt.Module(pipe.unet, name="unet", strategy=strategy_for_unet)
+pipe.vae = tt.Module(pipe.vae, name="vae", strategy=strategy_for_vae)
+tt.tune(pipe, input_data, batch_sizes=[1, 2], device="xpu")
+```
+
+Build `strategy_for_unet` and `strategy_for_vae` the same way as `strategy` in the quickstart. One submodule can use OpenVINO. Another can use Torch Inductor. Torch Tweak tunes the wrapped submodules one by one.
 
 ## Pipeline
 

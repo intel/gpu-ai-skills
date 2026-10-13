@@ -116,6 +116,16 @@ if grep -q "Pass OpenVINO, TorchAO, Torch Inductor, and" "$TWEAK"; then
 else
     err "torch-tweak body no longer requires the explicit backend list"
 fi
+if grep -q "which sizes are the batch" "$TWEAK"; then
+    ok "torch-tweak body explains input-shape adaptation"
+else
+    err "torch-tweak body missing input-shape adaptation"
+fi
+if grep -q "pipe.unet = tt.Module" "$TWEAK"; then
+    ok "torch-tweak body shows a per-submodule strategy"
+else
+    err "torch-tweak body missing the per-submodule example"
+fi
 if grep -q "pre-release" "$TWEAK"; then
     ok "torch-tweak body states the pre-release status"
 else
