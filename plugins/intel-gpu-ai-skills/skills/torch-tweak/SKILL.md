@@ -1,6 +1,6 @@
 ---
 name: torch-tweak
-description: "Tune a PyTorch nn.Module or pipeline for Intel GPU inference with Torch Tweak (https://github.com/intel/torch-tweak). Compare OpenVINO, TorchAO, Torch Inductor, and eager, keep the fastest correct backend, and save a .tt checkpoint. It looks at the input samples you pass and finds which sizes are the batch and which sizes can change. You can tune each submodule with its own strategy. Use when the user asks to tune, optimize, compile, or convert a general PyTorch model such as ResNet, BERT, diffusion, speech, or a custom module, and is not asking for an OpenAI server. Trigger phrases include \"tune this model\", \"optimize inference\", \"compile with OpenVINO\", and \"torch-tweak\". Not for vLLM or SGLang serving (use vllm-xpu-run or sglang-xpu-run), not for loading a Hugging Face model in eager PyTorch (use torch-xpu-run), and not for measuring an already chosen generate() path (use torch-xpu-bench)."
+description: "Tune a PyTorch nn.Module or pipeline for Intel GPU inference with Torch Tweak (https://github.com/intel/torch-tweak). Compare OpenVINO, TorchAO, Torch Inductor, and eager, keep the fastest correct backend, and save a .tt checkpoint. It looks at the input samples you pass and finds which sizes are the batch and which sizes can change. inspect walks into the submodules. You set min_depth and max_depth. One HighestThroughputStrategy then tunes each submodule on its own and keeps the fastest backend for that submodule and for each input shape. Use when the user asks to tune, optimize, compile, or convert a general PyTorch model such as ResNet, BERT, diffusion, speech, or a custom module, and is not asking for an OpenAI server. Trigger phrases include \"tune this model\", \"optimize inference\", \"compile with OpenVINO\", and \"torch-tweak\". Not for vLLM or SGLang serving (use vllm-xpu-run or sglang-xpu-run), not for loading a Hugging Face model in eager PyTorch (use torch-xpu-run), and not for measuring an already chosen generate() path (use torch-xpu-bench)."
 ---
 
 # torch-tweak
@@ -12,8 +12,10 @@ pre-release (pre-1.0). Tell the user that before installing. The API
 can change.
 
 It looks at the samples you pass and marks which sizes are the batch
-and which sizes can change. You can tune each submodule with its own
-strategy. See **Input shapes** and **Tune each submodule on its own**.
+and which sizes can change. Use one strategy, usually
+`HighestThroughputStrategy`. `inspect` walks into the submodules.
+`tune` then measures each one on its own and keeps the fastest backend
+for that submodule. See **Input shapes** and **Submodules**.
 
 Use it for a general PyTorch model or pipeline that has no serving
 stack: vision, encoders, speech, diffusion, or a custom module.
@@ -170,40 +172,43 @@ A different number of dimensions, or different non-tensor arguments: a new graph
 
 Use samples that look like the real inputs. Later inputs must follow the same pattern of batch, dynamic, and static sizes.
 
-## Tune each submodule on its own
+## Submodules
 
-`tt.inspect` lists the submodules. `tt.wrap(..., strategy=strategy)` puts that one strategy on every wrapped submodule.
+Use one strategy for the whole run. The normal choice is
+`HighestThroughputStrategy` from the quickstart. It measures the
+backends and keeps the fastest one.
 
-To use a different strategy for each submodule, wrap each one yourself. A submodule you do not wrap stays eager.
+`tt.inspect` runs the model and walks into the submodules. Depth 0 is
+the object you passed. `min_depth` is the shallowest module to keep.
+`max_depth` is the deepest module to keep. The default `max_depth` is
+5. Raise `min_depth` when the object you passed is only a wrapper and
+the real work is in its children. `examples/E5Large` in the Torch Tweak
+repo uses `min_depth=2`. `examples/ParakeetCTC` uses `min_depth=1`.
 
-```python
-modules_info = tt.inspect(pipe, input_data)
-modules_info.describe()
-
-pipe.unet = tt.Module(pipe.unet, name="unet", strategy=strategy_for_unet)
-pipe.vae = tt.Module(pipe.vae, name="vae", strategy=strategy_for_vae)
-tt.tune(pipe, input_data, batch_sizes=[1, 2], device="xpu")
-```
-
-Build `strategy_for_unet` and `strategy_for_vae` the same way as `strategy` in the quickstart. One submodule can use OpenVINO. Another can use Torch Inductor. Torch Tweak tunes the wrapped submodules one by one.
-
-## Pipeline
-
-For a pipeline (Stable Diffusion and similar), inspect, wrap the
-modules, then tune the pipeline. Full walkthrough:
-<https://github.com/intel/torch-tweak/blob/main/docs/learn/quick_start.md>
+Call `modules_info.describe()`, then `get_modules()`. `tt.wrap` puts
+the same strategy on each module in that list. `tt.tune` tunes those
+modules one by one. The same strategy can keep OpenVINO for one
+submodule and Torch Inductor for another. A different input shape on
+the same submodule is measured on its own too.
 
 ```python
-modules_info = tt.inspect(pipe, input_data)
+modules_info = tt.inspect(pipe, input_data, min_depth=0, max_depth=5)
 modules_info.describe()
-pipe = tt.wrap(pipe, modules_info.get_modules(), strategy=strategy)
-tt.tune(pipe, input_data, batch_sizes=[1, 2], device="xpu")
+modules = modules_info.get_modules()
+pipe = tt.wrap(pipe, modules, strategy=strategy)
+tt.tune(pipe, input_data, batch_sizes=[1, 4], device="xpu")
 tt.save(pipe, "tuned_pipe.tt")
 ```
 
-Use the same explicit backend list as the quickstart. Conditional
-logic inside a module is a graph break and blocks tuning of that
-module. Pick a nearby module without the branch, or leave it eager.
+`strategy` is the one `HighestThroughputStrategy` from the quickstart.
+A submodule you leave out of `modules` stays eager.
+
+Conditional logic inside a module is a graph break and blocks tuning
+of that module. Raise `min_depth` so inspect keeps its children, or
+leave that module out of `modules`.
+
+Full walkthrough:
+<https://github.com/intel/torch-tweak/blob/main/docs/learn/quick_start.md>
 
 To force one backend instead of searching:
 

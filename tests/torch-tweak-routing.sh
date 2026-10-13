@@ -121,10 +121,10 @@ if grep -q "which sizes are the batch" "$TWEAK"; then
 else
     err "torch-tweak body missing input-shape adaptation"
 fi
-if grep -q "pipe.unet = tt.Module" "$TWEAK"; then
-    ok "torch-tweak body shows a per-submodule strategy"
+if grep -q "min_depth" "$TWEAK" && grep -q "tunes those" "$TWEAK"; then
+    ok "torch-tweak body tunes each inspected submodule with one strategy"
 else
-    err "torch-tweak body missing the per-submodule example"
+    err "torch-tweak body missing inspect depth and per-submodule tuning"
 fi
 if grep -q "pre-release" "$TWEAK"; then
     ok "torch-tweak body states the pre-release status"
