@@ -61,6 +61,7 @@ def predict_for(model_id: str, device_id: str, runtime: str, ctx: int,
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from common import kv_bytes_per_token
+    from common import active_params
     from recommend import (fetch_config, parse_model_dims, count_params,
                            evaluate_fit, _kv_bytes)
     from roofline import factors_from_dict, peak_ops_s, phase_roofline
@@ -79,10 +80,14 @@ def predict_for(model_id: str, device_id: str, runtime: str, ctx: int,
     # Reproduce the recommender's roofline bands for tp=1: prefill latency is
     # the TTFT band, a single decode step is the TPOT band. Match the prompt
     # size the bench actually sends so predicted-vs-measured is apples-to-apples.
-    weight_bytes = params * qmeta["bytes_per_param"]
+    # The same split rank_candidates makes: memory counts every parameter,
+    # the roofline only what a token reads (active experts, no encoder
+    # tower). Mixing them compares the bench against a different band.
+    roof_params = active_params(d)
+    weight_bytes = roof_params * qmeta["bytes_per_param"]
     kv_per_tok = kv_bytes_per_token(d, _kv_bytes(kv_dtype))
     roof_kwargs = {
-        "params": params,
+        "params": roof_params,
         "weight_bytes": weight_bytes,
         "kv_bytes_per_token": kv_per_tok,
         "context_tokens": ctx,
@@ -103,7 +108,8 @@ def predict_for(model_id: str, device_id: str, runtime: str, ctx: int,
 
     return {"fit": fit, "ttft_ms": prefill.latency_ms,
             "tpot_ms": decode.latency_ms,
-            "kv_dtype": kv_dtype, "params": params}
+            "kv_dtype": kv_dtype, "params": params,
+            "roofline_params": roof_params}
 
 
 def launch(image: str, model_id: str, quant: str, kv_dtype: str, ctx: int,

@@ -188,7 +188,7 @@ Unit tests for the VRAM calculator, which need `pytest`:
 
 ```sh
 python3 -m pip install pytest
-python3 -m pytest tests/test_fit.py -q      # 71 passed, 6 skipped without HF_TOKEN
+python3 -m pytest tests/test_fit.py -q      # 545 passed, 18 skipped without HF_TOKEN
 ```
 
 These fetch each model's upstream `config.json` from the Hub at a pinned

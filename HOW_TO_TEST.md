@@ -177,18 +177,18 @@ python3 -m pytest tests/test_fit.py -q
 Expected on a machine with network and no `HF_TOKEN`:
 
 ```
-71 passed, 6 skipped
+545 passed, 18 skipped
 ```
 
-The 6 skips are the four gated models (Llama 3.1/3.3, Gemma 2 9B/27B) and two
-Gemma-specific dimension tests. Across situations:
+The 18 skips are tests that need the gated models (Llama 3.1/3.2/3.3,
+Gemma 2 9B/27B, Gemma 3 4B), including two Gemma-specific dimension tests. Across situations:
 
 | Situation | Result |
 |---|---|
-| Network, no `HF_TOKEN` | 71 passed, 6 skipped |
-| Network, valid `HF_TOKEN` with the Llama + Gemma licences accepted | 77 passed |
+| Network, no `HF_TOKEN` | 545 passed, 18 skipped |
+| Network, valid `HF_TOKEN` with the Llama + Gemma licences accepted | 563 passed |
 | Cache warm, no network | same as the run that warmed it |
-| No network, cold cache | 21 passed, 56 skipped — nothing fails |
+| No network, cold cache | 351 passed, 212 skipped — nothing fails |
 
 This suite needs each model's upstream `config.json`. Those files are **not
 committed, and must not be** — they are third-party files under their own

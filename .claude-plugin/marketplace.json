@@ -86,7 +86,7 @@
       "skills": [
         "./"
       ],
-      "description": "Estimate whether a Hugging Face decoder-only LLM, MoE, or VLM fits in Intel GPU VRAM for a quantization, context length, concurrency, runtime, and tensor-parallel setting. Use for memory-fit or max-model-len planning before launch. Reports weights, KV cache, activations, framework overhead, and first mitigation. Not for diffusion. Memory-only — does NOT predict throughput, tokens/sec, latency, or runtime config; route those to bench/deploy/recommend skills."
+      "description": "Estimate whether a Hugging Face decoder-only LLM, MoE, VLM, sliding-window, or hybrid state-space (SSM) model fits in Intel GPU VRAM for a quantization, context length, concurrency, runtime, and tensor-parallel setting. Use for memory-fit or max-model-len planning before launch. Reports weights, KV cache, recurrent state, activations, framework overhead, and first mitigation. Not for diffusion. Memory-only — does NOT predict throughput, tokens/sec, latency, or runtime config; route those to bench/deploy/recommend skills."
     },
     {
       "name": "torch-xpu-bench",

@@ -1,11 +1,15 @@
 ---
 name: model-can-it-fit
-description: Estimate whether a Hugging Face decoder-only LLM, MoE, or VLM fits in Intel GPU VRAM for a quantization, context length, concurrency, runtime, and tensor-parallel setting. Use for memory-fit or max-model-len planning before launch. Reports weights, KV cache, activations, framework overhead, and first mitigation. Not for diffusion. Memory-only — does NOT predict throughput, tokens/sec, latency, or runtime config; route those to bench/deploy/recommend skills.
+description: Estimate whether a Hugging Face decoder-only LLM, MoE, VLM, sliding-window, or hybrid state-space (SSM) model fits in Intel GPU VRAM for a quantization, context length, concurrency, runtime, and tensor-parallel setting. Use for memory-fit or max-model-len planning before launch. Reports weights, KV cache, recurrent state, activations, framework overhead, and first mitigation. Not for diffusion. Memory-only — does NOT predict throughput, tokens/sec, latency, or runtime config; route those to bench/deploy/recommend skills.
 ---
 
 # model-can-it-fit
 
 Use this for a pre-launch VRAM calculator: whether a Hugging Face model can fit on an Intel GPU at a requested quantization, context length, concurrency, runtime, and tensor-parallel degree. Input: HF model id, quantization, context length, concurrency, target VRAM. Output: a per-component breakdown and a verdict.
+
+Coverage includes dense, MoE, and multimodal models, sliding-window
+attention, hybrid and pure state-space (Mamba-style) models, and
+mixed-precision checkpoints that keep some components at full precision.
 
 The skill runs a CPU-only calculator. It does not need to deploy the model on an Intel GPU, but it MUST check the Intel GPU VRAM memory space and may need Hub access unless the user provides a local `config.json` or `params.json`.
 
@@ -159,6 +163,14 @@ For a fail, include:
 - the script's first mitigation: lower context, lower concurrency,
   lower KV dtype, quantize weights, or increase TP
 
+When the script reports recurrent state or windowed layers, say so and say
+what it means for the levers. Recurrent state scales with concurrency and
+not with context, and a windowed layer's cache stops growing past the
+window, so "shorten the context" is often the wrong advice for those
+models. Quote the state the runtime *reserves* (the `vllm reserves` line --
+about twice the bare state on a hybrid under vLLM), and on SGLang mention a
+`Pool split` row when one is printed: it is real memory, not slack.
+
 Do not present the result as measured GPU memory. It is a config-derived
 estimate intended to prevent obvious OOMs before launch.
 
@@ -274,6 +286,21 @@ devices in the answer via `ZE_AFFINITY_MASK`.
   -- fix the script and add a fixture, do not paper over it in prose.
 - Route diffusion fit and tight VLM image-memory questions to empirical
   checks instead of treating this estimate as complete.
+- Under `--runtime vllm`, the Activations and Framework rows are startup
+  reservations and do not move with `--concurrency`. For most models they do
+  not move with `--ctx` either, so shortening the context frees KV cache
+  only; a VLM's row includes the vision encoder's profiling pass, which vLLM
+  runs at the maximum image size whatever the request sends. The exception
+  is an InternVL-style tower, which vLLM profiles with a video whose frame
+  count follows the context -- there a shorter context also shrinks the
+  reservation, and the `Capacity:` ceiling accounts for it.
+- `--runtime` changes the answer for sliding-window and hybrid models, not
+  just the overhead figure. The engines size their window and state pools
+  differently, so pass the runtime the launch will actually use.
+- If the script exits saying it found recurrent layers but no state
+  geometry, do not substitute a guess. It names the config keys it looked
+  for; get those, or the estimate omits a pool that often exceeds the KV
+  cache.
 - For a VLM, relay the `Vision tower:` line. A quantized build is often not
   uniformly quantized -- the Qwen2-VL and Qwen2.5-VL AWQ checkpoints exclude
   `visual`, so the tower stays `bf16` and gets its own breakdown row. If that

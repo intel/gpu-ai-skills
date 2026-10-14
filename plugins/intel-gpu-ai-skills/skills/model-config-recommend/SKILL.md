@@ -169,10 +169,22 @@ context, larger concurrency) holds independently of throughput.
 ## Roofline model
 
 ```
-weights     = params × bytes_per_param / tp
-kv_cache    = 2 × num_layers × num_kv_heads × head_dim × kv_dtype_bytes × ctx × concurrency / tp
-activations ≈ 2 × concurrency × ctx × hidden × dtype_bytes + 512 MiB
-framework   = vllm-xpu overhead (~2.0 GB)
+weights     = params × bytes_per_param / tp      # everything in memory
+roofline params = active_params / tp             # what one token reads: the
+              # active experts only, no embedding table, no vision tower
+kv_per_tok_per_layer = 2 × num_kv_heads × head_dim × kv_dtype_bytes
+kv_cache    = kv_per_tok_per_layer × concurrency / tp
+            × (num_full_attention_layers × ctx
+               + num_windowed_layers × window_tokens)
+state       = reserved_state_per_request × concurrency    # SSM layers only
+activations = vLLM's profiling-pass peak: max of the dense MLP
+              (batched_tokens × 4 × intermediate × 2 B), the routed experts,
+              and a VLM's vision encoder at its profiled maximum input --
+              fixed at startup and independent of concurrency; independent
+              of ctx too, except an InternVL-style tower, whose profiled
+              video grows with the maximum context
+framework   = vLLM runtime floor (1.0 GiB, +0.15 quantized) + encoder buffers
+usable      = gpu_memory_utilization × 0.946 × device_vram  # driver total
 
 prefill_tok_s = peak_compute × MFU / (2 × params)         # compute-bound
 TTFT          = prompt_tokens / prefill_tok_s
@@ -180,6 +192,19 @@ TTFT          = prompt_tokens / prefill_tok_s
 single_stream_decode_tok_s = (mem_bw / weights_bytes) × BWE   # memory-bound
 TPOT_at_concurrency        = step time including KV traffic at (ctx, concurrency)
 ```
+
+The cache is charged per layer because the layer kinds cost different
+amounts. A windowed layer holds `window - 1` plus two scheduler batches
+under vLLM, so its cache stops growing once the context passes the
+window. A recurrent (state-space) layer holds no KV cache at all, only a
+fixed state per running request that does not shrink with context -- so
+for those models concurrency is the lever, not context. vLLM reserves more
+than one bare copy of that state: it pads each state page to an attention
+block (growing the block to fit the page) and, with its default prefix
+caching, holds two pages per recurrent layer, about twice the bare state.
+Because neither
+curve is a straight line, the reported maximum context and maximum
+concurrency are found by search rather than by division.
 
 MFU (compute efficiency) and BWE (bandwidth efficiency) live in
 `data/hardware.json` as ranges per runtime — see "Worked example"
