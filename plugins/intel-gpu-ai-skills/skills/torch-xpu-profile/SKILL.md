@@ -1,6 +1,6 @@
 ---
 name: torch-xpu-profile
-description: Profile a Hugging Face model on Intel GPU at the **PyTorch level** with `torch.profiler` and Kineto. Captures CPU + XPU timeline, exports Chrome trace, identifies hottest kernels and async-overlap gaps. Use when the user asks why a model is slow, which op is the bottleneck, or where the GPU is idle. Not for profiling inside a running vLLM server (use vllm-xpu-profile) or for SYCL-kernel-level signal beneath the PyTorch op layer (use xpu-profile-unitrace).
+description: Profile a Hugging Face model on Intel GPU at the **PyTorch level** with `torch.profiler` and Kineto. Captures CPU + XPU timeline, exports Chrome trace, identifies hottest kernels and async-overlap gaps. Use when the user asks why a model is slow, which op is the bottleneck, or where the GPU is idle. Not for profiling inside a running vLLM server (use vllm-xpu-profile) or for SYCL-kernel-level signal beneath the PyTorch op layer (use xpu-profile-unitrace). Not for searching TorchAO, Torch Inductor, or eager backends (use torch-tweak).
 ---
 
 # torch-xpu-profile
@@ -126,6 +126,9 @@ One trace per repeat -> easier to diff than one giant file.
 
 - Profiling inside a running vLLM server -> **vllm-xpu-profile**.
 - SYCL kernel level / hardware metrics -> **xpu-profile-unitrace**.
+- Searching TorchAO, Torch Inductor, or eager and saving a tuned
+  module -> **torch-tweak**. This skill explains a run. It does not
+  retune the model.
 - Fixing a slow kernel — out of scope.
 
 ## References

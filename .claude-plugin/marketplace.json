@@ -54,7 +54,7 @@
       "skills": [
         "./"
       ],
-      "description": "Run an arbitrary Hugging Face safetensors model on an Intel GPU using **upstream PyTorch** (>= 2.8) with the built-in `torch.xpu` device. Covers loading from the Hub, picking the right dtype, autocast, multi-GPU with accelerate's `device_map`, and the CUDA -> XPU code translation a user has to do once. Use for the Transformers / Accelerate / Diffusers path. Not for OpenAI-compatible serving (use vllm-xpu-run); explicitly not via intel-extension-for-pytorch (ipex) or ipex-llm \u2014 those paths are end-of-life and upstream PyTorch supersedes them."
+      "description": "Run an arbitrary Hugging Face safetensors model on an Intel GPU using **upstream PyTorch** (>= 2.8) with the built-in `torch.xpu` device. Covers loading from the Hub, picking the right dtype, autocast, multi-GPU with accelerate's `device_map`, and the CUDA -> XPU code translation a user has to do once. Use for the Transformers / Accelerate / Diffusers path. Not for OpenAI-compatible serving (use vllm-xpu-run); explicitly not via intel-extension-for-pytorch (ipex) or ipex-llm \u2014 those paths are end-of-life and upstream PyTorch supersedes them. Not for searching TorchAO, Torch Inductor, and eager or saving a tuned module (use torch-tweak)."
     },
     {
       "name": "vllm-xpu-run",
@@ -94,7 +94,7 @@
       "skills": [
         "./"
       ],
-      "description": "Benchmark a Hugging Face model on an Intel GPU through pure PyTorch + Transformers, **single-process, no HTTP server**. Measures generate() throughput in tokens/sec, time-to-first-token, decode-step latency, and peak XPU memory. Also covers diffusion and encoder-only models via `references/non-llm-snippets.md`. Use after **model-can-it-fit** to validate predicted memory against `torch.xpu.max_memory_allocated()`."
+      "description": "Benchmark a Hugging Face model on an Intel GPU through pure PyTorch + Transformers, **single-process, no HTTP server**. Measures generate() throughput in tokens/sec, time-to-first-token, decode-step latency, and peak XPU memory. Also covers diffusion and encoder-only models via `references/non-llm-snippets.md`. Use after **model-can-it-fit** to validate predicted memory against `torch.xpu.max_memory_allocated()`. Not for searching TorchAO, Torch Inductor, or eager backends (use torch-tweak)."
     },
     {
       "name": "sglang-xpu-bench",
@@ -110,7 +110,7 @@
       "skills": [
         "./"
       ],
-      "description": "Profile a Hugging Face model on Intel GPU at the **PyTorch level** with `torch.profiler` and Kineto. Captures CPU + XPU timeline, exports Chrome trace, identifies hottest kernels and async-overlap gaps. Use when the user asks why a model is slow, which op is the bottleneck, or where the GPU is idle. Not for profiling inside a running vLLM server (use vllm-xpu-profile) or for SYCL-kernel-level signal beneath the PyTorch op layer (use xpu-profile-unitrace)."
+      "description": "Profile a Hugging Face model on Intel GPU at the **PyTorch level** with `torch.profiler` and Kineto. Captures CPU + XPU timeline, exports Chrome trace, identifies hottest kernels and async-overlap gaps. Use when the user asks why a model is slow, which op is the bottleneck, or where the GPU is idle. Not for profiling inside a running vLLM server (use vllm-xpu-profile) or for SYCL-kernel-level signal beneath the PyTorch op layer (use xpu-profile-unitrace). Not for searching TorchAO, Torch Inductor, or eager backends (use torch-tweak)."
     },
     {
       "name": "vllm-xpu-profile",
@@ -175,6 +175,14 @@
         "./"
       ],
       "description": "Deploy a Prometheus + Grafana + XPU Manager monitoring stack on an Intel GPU host using the intel/xe-full-stack-monitoring repo (plain Docker Compose). Brings up containers for real-time GPU, CPU, and vLLM metrics collection and visualization. Use when the user wants to monitor XPU utilization, temperature, power, memory, or vLLM inference performance."
+    },
+    {
+      "name": "torch-tweak",
+      "source": "./plugins/intel-gpu-ai-skills/skills/torch-tweak",
+      "skills": [
+        "./"
+      ],
+      "description": "Tune a PyTorch nn.Module or pipeline for Intel GPU inference with Torch Tweak (https://github.com/intel/torch-tweak). Compare TorchAO, Torch Inductor, and eager, keep the fastest correct backend, and save a .tt checkpoint. It looks at the input samples you pass and finds which sizes are the batch and which sizes can change. inspect walks into the submodules. You set min_depth and max_depth. One HighestThroughputStrategy then tunes each submodule on its own and keeps the fastest backend for that submodule and for each input shape. Use when the user asks to tune, optimize, or compile a general PyTorch model such as ResNet, BERT, diffusion, speech, or a custom module, and is not asking for an OpenAI server. Trigger phrases include \"tune this model\", \"optimize inference\", \"torch.compile\", and \"torch-tweak\". Not for vLLM or SGLang serving (use vllm-xpu-run or sglang-xpu-run), not for loading a Hugging Face model in eager PyTorch (use torch-xpu-run), and not for measuring an already chosen generate() path (use torch-xpu-bench)."
     }
   ]
 }
