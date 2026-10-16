@@ -38,7 +38,7 @@ Format follows the [Agent Skills specification](https://agentskills.io/specifica
 
 | Skill | Useful for | Example prompt |
 |-------|------------|----------------|
-| `torch-tweak` | Tune a general PyTorch module or pipeline by comparing OpenVINO, TorchAO, Torch Inductor, and eager, then save the fastest checkpoint. Not a serving stack. | "Tune this ResNet for inference on my Intel GPU." |
+| `torch-tweak` | Tune a general PyTorch module or pipeline by comparing TorchAO, Torch Inductor, and eager, then save the fastest checkpoint. Not a serving stack. | "Tune this ResNet for inference on my Intel GPU." |
 
 ### Benchmark — measure how fast
 
@@ -214,7 +214,7 @@ For deeper testing — install round-trip, per-skill acceptance, end-to-end smok
 - [huggingface/skills](https://github.com/huggingface/skills) — Hub workflows
 - [PyTorch XPU getting started](https://docs.pytorch.org/docs/stable/notes/get_start_xpu.html)
 - [vLLM XPU installation](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/?device=xpu)
-- [Torch Tweak](https://github.com/intel/torch-tweak) — module tuning (OpenVINO, TorchAO, Inductor)
+- [Torch Tweak](https://github.com/intel/torch-tweak) — module tuning (TorchAO, Inductor, eager)
 
 ## License
 

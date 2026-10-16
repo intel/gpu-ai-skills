@@ -1,6 +1,6 @@
 ---
 name: torch-xpu-run
-description: Run an arbitrary Hugging Face safetensors model on an Intel GPU using **upstream PyTorch** (>= 2.8) with the built-in `torch.xpu` device. Covers loading from the Hub, picking the right dtype, autocast, multi-GPU with accelerate's `device_map`, and the CUDA -> XPU code translation a user has to do once. Use for the Transformers / Accelerate / Diffusers path. Not for OpenAI-compatible serving (use vllm-xpu-run); explicitly not via intel-extension-for-pytorch (ipex) or ipex-llm — those paths are end-of-life and upstream PyTorch supersedes them. Not for searching OpenVINO, TorchAO, and Torch Inductor or saving a tuned module (use torch-tweak).
+description: Run an arbitrary Hugging Face safetensors model on an Intel GPU using **upstream PyTorch** (>= 2.8) with the built-in `torch.xpu` device. Covers loading from the Hub, picking the right dtype, autocast, multi-GPU with accelerate's `device_map`, and the CUDA -> XPU code translation a user has to do once. Use for the Transformers / Accelerate / Diffusers path. Not for OpenAI-compatible serving (use vllm-xpu-run); explicitly not via intel-extension-for-pytorch (ipex) or ipex-llm — those paths are end-of-life and upstream PyTorch supersedes them. Not for searching TorchAO, Torch Inductor, and eager or saving a tuned module (use torch-tweak).
 ---
 
 # torch-xpu-run
@@ -306,7 +306,7 @@ is on CPU.
 
 - vLLM serving -> **vllm-xpu-run**.
 - SGLang serving -> **sglang-xpu-run**.
-- Searching OpenVINO, TorchAO, and Torch Inductor and saving the
+- Searching TorchAO, Torch Inductor, and eager and saving the
   fastest module -> **torch-tweak**. This skill runs the model. It
   does not compare backends.
 - Per-model quant gotchas (AWQ quirks, GPTQ kernel coverage) — go

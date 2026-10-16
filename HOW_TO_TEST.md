@@ -291,7 +291,7 @@ Worked-example pairings used during authoring:
 | `sglang-xpu-run` | Run the pre-flight gate, then serve a model and smoke-test `/v1/chat/completions`. **Two build steps required:** (1) build `sglang-xpu:local` from `docker/xpu.slim.Dockerfile` (~28 min; add `ENV MAX_JOBS=8 CMAKE_BUILD_PARALLEL_LEVEL=8` to avoid OOM on many-core hosts); (2) apply the UMD-pin patch: write the patch Dockerfile into a private scratch dir and build from it — `d=$(mktemp -d); ...write "$d/Dockerfile"...; docker build -t sglang-xpu:local-b580 "$d"` (<5 s). Use `mktemp -d`, not a fixed `/tmp` name: the path is otherwise guessable, and `/tmp` as a build context also uploads every readable file in it to the daemon. Use `vllm/vllm-openai-xpu:latest` and verify its UMD is compatible with the host kernel before copying it. Also add `--group-add "$(stat -c '%g' /dev/dri/renderD128)"` to all `docker run` commands — the sglang image runs as non-root user `sdp` which is not in the render group by default. If the image is absent, the skill correctly redirects to `vllm-xpu-run`; that redirect counts as PASS for the skill's guard logic. |
 | `vllm-xpu-bench` | Bench the running vLLM server, check TTFT/TPOT/throughput land in the predicted shape. |
 | `torch-xpu-bench` | Run `bench.py` on a small causal LM and on diffusion / encoder snippets. |
-| `torch-tweak` | With XPU available, tune a small `nn.Sequential` MLP using `HighestThroughputStrategy` with OpenVINO, TorchAO, Inductor, and eager, then `tt.save`. Confirm the run prints a selected backend and writes a `.tt` file. If `torch.xpu.is_available()` is false, the skill must stop and point at `xpu-discover` rather than tuning on CPU. |
+| `torch-tweak` | With XPU available, tune a small `nn.Sequential` MLP using `HighestThroughputStrategy` with TorchAO, Inductor, and eager, then `tt.save`. Confirm the run prints a selected backend and writes a `.tt` file. If `torch.xpu.is_available()` is false, the skill must stop and point at `xpu-discover` rather than tuning on CPU. |
 | `sglang-xpu-bench` | Run `sglang.bench_serving` against a sglang server (only reachable if the sglang container builds clean on your kernel). |
 | `model-can-it-fit` | See Layer 3 above. |
 | `model-config-recommend` | Ask for the best vLLM-XPU config for Qwen2.5-7B at 8K on B70/B60; verify it reports fit, DP/TP, TTFT, decode-step latency, aggregate decode, and a launch command. |
@@ -316,7 +316,7 @@ users will actually type:
 | "Run this model for inference with the OpenAI API." | Uses `vllm-xpu-run` if the user wants a server; asks PyTorch vs vLLM if ambiguous. |
 | "Run the same model in pure PyTorch, no server." | Uses `torch-xpu-run`; does not emit vLLM container commands. |
 | "Tune this ResNet for inference on my Intel GPU." | Uses `torch-tweak`. Does not start a vLLM container. |
-| "Optimize this diffusion pipeline with OpenVINO." | Uses `torch-tweak`, not `vllm-xpu-run`. |
+| "Optimize this diffusion pipeline with torch.compile." | Uses `torch-tweak`, not `vllm-xpu-run`. |
 | "Benchmark this model." | Asks whether the target is PyTorch, vLLM, or SGLang unless a server/framework is already obvious. |
 | "Why is TPOT worse than the recommender predicted?" | Uses `vllm-xpu-bench` / `xpu-profile-unitrace` framing; checks quant path, KV dtype, concurrency, kernel fallback, and explains roofline miss. |
 

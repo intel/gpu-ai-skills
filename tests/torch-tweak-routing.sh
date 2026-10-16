@@ -34,10 +34,15 @@ if desc_line "$TWEAK" | grep -q "Tune a PyTorch"; then
 else
     err "torch-tweak description missing 'Tune a PyTorch'"
 fi
-if desc_line "$TWEAK" | grep -q "OpenVINO, TorchAO, Torch Inductor, and eager"; then
-    ok "torch-tweak description names the four backends"
+if desc_line "$TWEAK" | grep -q "TorchAO, Torch Inductor, and eager"; then
+    ok "torch-tweak description names the GPU backends"
 else
-    err "torch-tweak description missing the four backends"
+    err "torch-tweak description missing the GPU backends"
+fi
+if desc_line "$TWEAK" | grep -q "OpenVINO"; then
+    err "torch-tweak description still names OpenVINO"
+else
+    ok "torch-tweak description does not name OpenVINO"
 fi
 if desc_line "$TWEAK" | grep -q "Not for vLLM or SGLang serving"; then
     ok "torch-tweak description disclaims vLLM and SGLang serving"
@@ -110,11 +115,21 @@ else
 fi
 
 # 4. The skill states the load-bearing default: an empty strategy
-#    never runs OpenVINO or TorchAO.
-if grep -q "Pass OpenVINO, TorchAO, Torch Inductor, and" "$TWEAK"; then
+#    never runs TorchAO. Install commands stay in the upstream guide.
+if grep -q "Pass TorchAO, Torch Inductor, and" "$TWEAK"; then
     ok "torch-tweak body requires the explicit backend list"
 else
     err "torch-tweak body no longer requires the explicit backend list"
+fi
+if grep -q "docs/learn/install.md" "$TWEAK"; then
+    ok "torch-tweak body points at the install guide"
+else
+    err "torch-tweak body missing the install guide link"
+fi
+if grep -q "download.pytorch.org/whl/xpu" "$TWEAK"; then
+    err "torch-tweak body still pastes the XPU install command"
+else
+    ok "torch-tweak body does not paste the XPU install command"
 fi
 if grep -q "which sizes are the batch" "$TWEAK"; then
     ok "torch-tweak body explains input-shape adaptation"

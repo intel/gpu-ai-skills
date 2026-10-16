@@ -155,7 +155,7 @@ the observed response summary to the user:
   runtime triage skill own those.
 - Performance root-cause analysis — bench / profile skills in order:
   runtime bench, runtime profile, **xpu-profile-unitrace**.
-- Tuning a module across OpenVINO, TorchAO, and Inductor —
+- Tuning a module across TorchAO, Torch Inductor, and eager —
   **torch-tweak**. This planner does not chain that skill.
 
 ## Reporting

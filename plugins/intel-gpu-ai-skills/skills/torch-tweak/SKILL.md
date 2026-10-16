@@ -1,15 +1,15 @@
 ---
 name: torch-tweak
-description: "Tune a PyTorch nn.Module or pipeline for Intel GPU inference with Torch Tweak (https://github.com/intel/torch-tweak). Compare OpenVINO, TorchAO, Torch Inductor, and eager, keep the fastest correct backend, and save a .tt checkpoint. It looks at the input samples you pass and finds which sizes are the batch and which sizes can change. inspect walks into the submodules. You set min_depth and max_depth. One HighestThroughputStrategy then tunes each submodule on its own and keeps the fastest backend for that submodule and for each input shape. Use when the user asks to tune, optimize, compile, or convert a general PyTorch model such as ResNet, BERT, diffusion, speech, or a custom module, and is not asking for an OpenAI server. Trigger phrases include \"tune this model\", \"optimize inference\", \"compile with OpenVINO\", and \"torch-tweak\". Not for vLLM or SGLang serving (use vllm-xpu-run or sglang-xpu-run), not for loading a Hugging Face model in eager PyTorch (use torch-xpu-run), and not for measuring an already chosen generate() path (use torch-xpu-bench)."
+description: "Tune a PyTorch nn.Module or pipeline for Intel GPU inference with Torch Tweak (https://github.com/intel/torch-tweak). Compare TorchAO, Torch Inductor, and eager, keep the fastest correct backend, and save a .tt checkpoint. It looks at the input samples you pass and finds which sizes are the batch and which sizes can change. inspect walks into the submodules. You set min_depth and max_depth. One HighestThroughputStrategy then tunes each submodule on its own and keeps the fastest backend for that submodule and for each input shape. Use when the user asks to tune, optimize, or compile a general PyTorch model such as ResNet, BERT, diffusion, speech, or a custom module, and is not asking for an OpenAI server. Trigger phrases include \"tune this model\", \"optimize inference\", \"torch.compile\", and \"torch-tweak\". Not for vLLM or SGLang serving (use vllm-xpu-run or sglang-xpu-run), not for loading a Hugging Face model in eager PyTorch (use torch-xpu-run), and not for measuring an already chosen generate() path (use torch-xpu-bench)."
 ---
 
 # torch-tweak
 
 [Torch Tweak](https://github.com/intel/torch-tweak) tunes a PyTorch
-`nn.Module` or pipeline in process. It tries compile and conversion
-backends, checks the tuned module, and can save the result. It is
-pre-release (pre-1.0). Tell the user that before installing. The API
-can change.
+`nn.Module` or pipeline on an Intel GPU. It measures TorchAO, Torch
+Inductor, and eager, checks the tuned module, and can save the result.
+It is pre-release (pre-1.0). Tell the user that before installing. The
+API can change.
 
 It looks at the samples you pass and marks which sizes are the batch
 and which sizes can change. Use one strategy, usually
@@ -26,7 +26,7 @@ OpenAI-compatible server stay on **vllm-xpu-run** or **sglang-xpu-run**.
 
 - "Tune this ResNet / BERT / diffusion pipeline on my Intel GPU."
 - "Optimize inference" or "compile this module" without naming a server.
-- "Try OpenVINO, TorchAO, and torch.compile, and keep the fastest."
+- "Try TorchAO and torch.compile, and keep the fastest."
 - The user names Torch Tweak or `torch_tweak`.
 
 ## When not to use
@@ -51,18 +51,23 @@ the user to confirm:
 
 1. The module or pipeline to tune, and a small sample that matches its
    forward inputs.
-2. That cloning `intel/torch-tweak` and installing it (this pulls
-   OpenVINO and TorchAO) plus a PyTorch XPU wheel is acceptable.
+2. That following the Torch Tweak install guide, including a PyTorch
+   XPU wheel, is acceptable.
 
 Do not run `pip install`, `uv pip install`, or a model download until
 the user explicitly confirms.
 
 ## Install
 
+Do not invent an install command. Follow the install guide:
+
+<https://github.com/intel/torch-tweak/blob/main/docs/learn/install.md>
+
 PyTorch XPU wheels are not on the default PyPI index. Torch Tweak is
-installed from the GitHub repo, not with a bare `pip install torch-tweak`.
-Source: the install guide in that repo
-(`docs/learn/install.md`).
+not installed with a bare `pip install torch-tweak`. Do not add an
+unpinned `pip install torch` from PyPI. That replaces the XPU build.
+The XPU wheel section in **torch-xpu-run** is the same wheel the
+install guide uses.
 
 Check what is already present:
 
@@ -72,34 +77,13 @@ python3 -c "import torch_tweak; print('torch_tweak ok')"
 ```
 
 If torch is missing or `torch.xpu.is_available()` is false on Intel GPU
-hardware, install the XPU wheel first (see **torch-xpu-run**, section
-"Where to get PyTorch with XPU"). Then:
-
-```sh
-git clone https://github.com/intel/torch-tweak
-cd torch-tweak
-pip install \
-    --index-url https://download.pytorch.org/whl/xpu \
-    --extra-index-url https://pypi.org/simple \
-    -e ".[xpu]"
-```
-
-`--break-system-packages` is needed under PEP 668 on Ubuntu 24.04+;
-omit it in older images, or use a venv. Do not add an unpinned
-`pip install torch` from PyPI next to this command. That replaces the
-XPU build.
-
-Verify:
-
-```sh
-python3 -c "import torch, torch_tweak; print(torch.__version__, torch.xpu.is_available())"
-```
+hardware, stop and follow the install guide. Then re-run the check.
 
 ## Quickstart (one module)
 
 `HighestThroughputStrategy()` with no backends list compares only
-Torch Inductor and eager. Pass OpenVINO, TorchAO, Torch Inductor, and
-eager explicitly or the conversion backends never run.
+Torch Inductor and eager. Pass TorchAO, Torch Inductor, and eager
+explicitly or TorchAO never runs.
 
 Pass at least two batch sizes when tensor shapes can vary. One batch
 size forces static shapes. `.enable_find_max_batch_size(False)` skips
@@ -116,10 +100,9 @@ import torch.nn as nn
 
 import torch_tweak.torch as tt
 from torch_tweak.torch.backend import (
-    OpenVINOBackend,
     TorchAOBackend,
-    TorchEagerBackend,
     TorchInductorBackend,
+    TorchEagerBackend,
 )
 
 logging.basicConfig(level=logging.INFO, force=True)
@@ -133,7 +116,6 @@ sample = torch.randn(32, device=device)
 
 strategy = tt.HighestThroughputStrategy(
     backends=[
-        OpenVINOBackend(),
         TorchAOBackend(),
         TorchInductorBackend(),
         TorchEagerBackend(),
@@ -157,6 +139,10 @@ tt.load(module, "tuned_mlp.tt")
 ```
 
 Deploy the `.tt` file on the same hardware used for tuning.
+
+Backend flags and worked models are in the guides and the examples
+tree linked under **References**. Do not copy those pages into this
+skill.
 
 ## Input shapes
 
@@ -187,7 +173,7 @@ repo uses `min_depth=2`. `examples/ParakeetCTC` uses `min_depth=1`.
 
 Call `modules_info.describe()`, then `get_modules()`. `tt.wrap` puts
 the same strategy on each module in that list. `tt.tune` tunes those
-modules one by one. The same strategy can keep OpenVINO for one
+modules one by one. The same strategy can keep TorchAO for one
 submodule and Torch Inductor for another. A different input shape on
 the same submodule is measured on its own too.
 
@@ -207,24 +193,15 @@ Conditional logic inside a module is a graph break and blocks tuning
 of that module. Raise `min_depth` so inspect keeps its children, or
 leave that module out of `modules`.
 
-Full walkthrough:
-<https://github.com/intel/torch-tweak/blob/main/docs/learn/quick_start.md>
-
-To force one backend instead of searching:
-
-```python
-from torch_tweak.torch.backend import OpenVINOBackend, OpenVINOBackendConfig
-from torch_tweak.torch.tune_strategy import OneBackendStrategy
-
-strategy = OneBackendStrategy(
-    backend=OpenVINOBackend(OpenVINOBackendConfig(performance_hint="THROUGHPUT"))
-)
-```
-
+To force one GPU backend instead of searching, use
+`OneBackendStrategy` with `TorchInductorBackend` or `TorchAOBackend`.
 `OneBackendStrategy` surfaces the original exception.
 `FirstWinsStrategy` tries backends in order and keeps the first one
 that builds. Use `HighestThroughputStrategy` when the user wants the
 fastest measured path.
+
+If the user explicitly asks for OpenVINO, add that backend from the
+backends guide. Do not add it otherwise.
 
 ## What this skill does NOT cover
 
@@ -235,8 +212,10 @@ fastest measured path.
 
 ## References
 
-- Repo and guides: <https://github.com/intel/torch-tweak>
 - Install: <https://github.com/intel/torch-tweak/blob/main/docs/learn/install.md>
+- Learn: <https://github.com/intel/torch-tweak/tree/main/docs/learn>
 - Quick start: <https://github.com/intel/torch-tweak/blob/main/docs/learn/quick_start.md>
 - Backends: <https://github.com/intel/torch-tweak/blob/main/docs/learn/backends.md>
-- Core API: <https://github.com/intel/torch-tweak/blob/main/docs/learn/core_functionalities.md>
+- Guides: <https://github.com/intel/torch-tweak/tree/main/docs/guides>
+- Inspect: <https://github.com/intel/torch-tweak/blob/main/docs/guides/inspect.md>
+- Examples: <https://github.com/intel/torch-tweak/tree/main/examples>
