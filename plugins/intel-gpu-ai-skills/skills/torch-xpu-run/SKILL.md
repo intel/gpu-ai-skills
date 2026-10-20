@@ -275,8 +275,8 @@ is on CPU.
   (<0.34). Upgrade.
 - `model type '<X>' Transformers does not recognize` -> installed
   transformers is older than the model architecture. Upgrade or
-  pin per the model card; install from source if needed
-  (`pip install git+https://github.com/huggingface/transformers.git`).
+  pin per the model card (`pip install -U transformers`, or
+  `pip install "transformers==<version the card names>"`).
 - `float16 not supported on this device` -> switch to
   `dtype=torch.bfloat16`.
 - `Unknown scheme for proxy URL ... 'socks://...'` -> `httpx` (used
