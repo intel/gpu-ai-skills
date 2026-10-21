@@ -1,6 +1,6 @@
 ---
 name: torch-xpu-bench
-description: Benchmark a Hugging Face model on an Intel GPU through pure PyTorch + Transformers, **single-process, no HTTP server**. Measures generate() throughput in tokens/sec, time-to-first-token, decode-step latency, and peak XPU memory. Also covers diffusion and encoder-only models via `references/non-llm-snippets.md`. Use after **model-can-it-fit** to validate predicted memory against `torch.xpu.max_memory_allocated()`.
+description: Benchmark a Hugging Face model on an Intel GPU through pure PyTorch + Transformers, **single-process, no HTTP server**. Measures generate() throughput in tokens/sec, time-to-first-token, decode-step latency, and peak XPU memory. Also covers diffusion and encoder-only models via `references/non-llm-snippets.md`. Use after **model-can-it-fit** to validate predicted memory against `torch.xpu.max_memory_allocated()`. Not for searching TorchAO, Torch Inductor, or eager backends (use torch-tweak).
 ---
 
 # torch-xpu-bench
@@ -186,6 +186,9 @@ the bench's "Peak XPU memory" against the calculator's "Total" line:
 
 - vLLM serving benches → **vllm-xpu-bench**.
 - SGLang serving benches → **sglang-xpu-bench**.
+- Searching TorchAO, Torch Inductor, or eager and keeping the
+  fastest module → **torch-tweak**. This skill measures the path you
+  already chose.
 - Profiling → **torch-xpu-profile**.
 - Training throughput — out of scope.
 

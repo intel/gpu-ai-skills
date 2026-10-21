@@ -183,6 +183,11 @@ if tests/routing.sh; then
 else
     err "tests/routing.sh failed"
 fi
+if tests/torch-tweak-routing.sh; then
+    ok "tests/torch-tweak-routing.sh"
+else
+    err "tests/torch-tweak-routing.sh failed"
+fi
 if tests/xpu-system-setup.sh; then
     ok "tests/xpu-system-setup.sh"
 else
