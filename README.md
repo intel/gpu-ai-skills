@@ -1,5 +1,23 @@
 # Intel GPU AI Skills
 
+<div align="center">
+
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/intel/gpu-ai-skills)](https://github.com/intel/gpu-ai-skills/releases)
+[![Intel GPU (XPU)](https://img.shields.io/badge/Intel-GPU_(XPU)-0071C5?logo=intel&logoColor=white)](https://docs.pytorch.org/docs/stable/notes/get_start_xpu.html)
+[![Agent Skills standard](https://img.shields.io/badge/Agent_Skills-Standard-7B2D8E)](https://agentskills.io/specification)
+[![vLLM supported](https://img.shields.io/badge/vLLM-Supported-30A2FF?logo=vllm&logoColor=white)](https://docs.vllm.ai/)
+[![SGLang supported](https://img.shields.io/badge/SGLang-Supported-blue)](https://docs.sglang.io/)
+
+[![Claude Code compatible](https://img.shields.io/badge/Claude_Code-Compatible-D97757?logo=claude&logoColor=white)](https://code.claude.com/docs/en/skills)
+[![Cursor compatible](https://img.shields.io/badge/Cursor-Compatible-000000?logo=cursor&logoColor=white)](https://cursor.com/docs/skills)
+[![Gemini CLI compatible](https://img.shields.io/badge/Gemini_CLI-Compatible-4285F4?logo=googlegemini&logoColor=white)](https://github.com/google-gemini/gemini-cli)
+[![OpenAI Codex compatible](https://img.shields.io/badge/OpenAI_Codex-Compatible-412991)](https://developers.openai.com/codex/skills/)
+
+[![Also works with Copilot CLI, opencode, Qwen Code, Kimi Code, Hermes Agent, OpenClaw](https://img.shields.io/badge/Also_works_with-Copilot_CLI_|_opencode_|_Qwen_|_Kimi_|_Hermes_|_OpenClaw-555555)](#installing)
+
+</div>
+
 A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for setting up, running, benchmarking, and profiling arbitrary Hugging Face safetensors and GGUF models on Intel GPUs (Arc, Arc Pro, Battlemage). Covers the PyTorch + Transformers, vLLM-XPU, SGLang-XPU, and llama.cpp-SYCL stacks, plus CUDA to XPU migration.
 
 Format follows the [Agent Skills specification](https://agentskills.io/specification).
