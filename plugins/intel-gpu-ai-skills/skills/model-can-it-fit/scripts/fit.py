@@ -3551,16 +3551,16 @@ def main(argv: list[str] | None = None) -> int:
         # A count of 0.00 B reads as "no tower". Say which field is missing
         # instead, because the gap is in the understating direction: the
         # tower's params are real, they are just not in the figure below.
-        print(f"Vision tower:      not sized -- vision_config declares no "
-              f"depth/num_hidden_layers, so the weights below cover the LLM "
-              f"backbone only")
-        print(f"                   Qwen2.5-VL-7B-Instruct-AWQ ships such a "
-              f"config: served, vLLM-XPU allocated 6.59 GiB against the "
-              f"5.37 GiB estimated here")
+        print("Vision tower:      not sized -- vision_config declares no "
+              "depth/num_hidden_layers, so the weights below cover the LLM "
+              "backbone only")
+        print("                   Qwen2.5-VL-7B-Instruct-AWQ ships such a "
+              "config: served, vLLM-XPU allocated 6.59 GiB against the "
+              "5.37 GiB estimated here")
     print(f"Total parameters:  {params/1e9:.2f} B")
     print(f"Quantization:      {args.quant}  ({bpp:.2f} bytes/param)", end="")
     if auto_quant:
-        print(f"  (auto-detected from config)")
+        print("  (auto-detected from config)")
     else:
         print()
     if auto_quant and width_assumed:
@@ -3572,8 +3572,8 @@ def main(argv: list[str] | None = None) -> int:
               f"'{declared_method}', which this script cannot price; the "
               f"shipped weight dtype is unknown)")
         if not explicit_quant:
-            print(f"                   priced at bf16, the widest it could be "
-                  f"-- pass --quant if you know the real width")
+            print("                   priced at bf16, the widest it could be "
+                  "-- pass --quant if you know the real width")
     if expert_dtype:
         # "base dtype", not "non-expert tensors are": embeddings are always
         # bf16, and modules_to_not_convert can hold attention or routers there
@@ -3669,7 +3669,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {label:<15} {fmt_gb(mixed_breakdown[f'{key}_bytes'])}   "
                   f"({mixed_breakdown[f'{key}_params']/1e9:.2f}B params "
                   f"@ {mixed_breakdown[f'{key}_bpp']:.2f} B/p)")
-        print(f"  -----              -----")
+        print("  -----              -----")
         print(f"  Weights total   {fmt_gb(weights)}")
         if mixed_breakdown["vision_replicated"]:
             print(f"  (vision tower replicated on every rank: its "
@@ -3723,7 +3723,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"  Activations     {fmt_gb(act)}   (estimate)")
         print(f"  Framework       {fmt_gb(framework)}   ({args.runtime})")
-    print(f"  -----              -----")
+    print("  -----              -----")
     print(f"  Total           {fmt_gb(total)}")
     print()
     per_device = f"  (per device, x{args.tp} TP)" if args.tp > 1 else ""
