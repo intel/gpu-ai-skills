@@ -38,7 +38,6 @@ ssh "$GPU_HOST" 'docker run -d --name vllm-xpu \
     vllm/vllm-openai-xpu:latest \
     <model-id> \
         --dtype bfloat16 \
-        --enforce-eager \
         --block-size=64 \
         --max-model-len 4096 \
         --gpu-memory-utilization 0.85'
