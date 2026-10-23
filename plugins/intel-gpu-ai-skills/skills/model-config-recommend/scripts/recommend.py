@@ -852,10 +852,29 @@ def main(argv: list[str] | None = None) -> int:
                 return p.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 return ""
-        candidates = [p for p in cache.glob(f"{args.device}__*.json")
-                      if digest_part in p.name
-                      or args.use_calibration in _cache_text(p)]
+        # Only anchor to factors measured in the same mode as the emitted
+        # launch line. Files without the key predate graphs-on calibration and
+        # were always measured eager. An unparseable file is kept so the
+        # corrupt-cache error below still reports it.
+        def _cal_is_eager(p: _P) -> bool:
+            try:
+                return bool(json.loads(_cache_text(p)).get("enforce_eager", True))
+            except (json.JSONDecodeError, AttributeError):
+                return args.enforce_eager
+        matches = [p for p in cache.glob(f"{args.device}__*.json")
+                   if digest_part in p.name
+                   or args.use_calibration in _cache_text(p)]
+        candidates = [p for p in matches
+                      if _cal_is_eager(p) == args.enforce_eager]
         if not candidates:
+            if matches:
+                mode = "eager" if args.enforce_eager else "graphs-on"
+                other = "graphs-on" if args.enforce_eager else "eager"
+                sys.exit(f"Only {other} calibration cached for "
+                         f"({args.device}, {args.use_calibration}), but this "
+                         f"launch line is {mode}. Re-run scripts/calibrate.py"
+                         f"{' --enforce-eager' if args.enforce_eager else ''} "
+                         f"to measure the mode you will serve.")
             sys.exit(f"No calibration cached at {cache} for "
                      f"({args.device}, {args.use_calibration}). "
                      f"Run scripts/calibrate.py first.")

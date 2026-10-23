@@ -113,7 +113,8 @@ def predict_for(model_id: str, device_id: str, runtime: str, ctx: int,
 
 
 def launch(image: str, model_id: str, quant: str, kv_dtype: str, ctx: int,
-           concurrency: int, port: int, container: str) -> None:
+           concurrency: int, port: int, container: str,
+           enforce_eager: bool = False) -> None:
     if _container_exists(container):
         sys.exit(
             f"Docker container '{container}' already exists. Pick another "
@@ -136,13 +137,17 @@ def launch(image: str, model_id: str, quant: str, kv_dtype: str, ctx: int,
     cmd += ["-v", f"{Path.home()}/.cache/huggingface:/root/.cache/huggingface",
             "-p", f"{port}:8000", image,
             model_id,
-            "--enforce-eager",
             f"--max-model-len={ctx}",
             "--gpu-memory-utilization=0.85",
             # Verify must measure the un-cached path: prefix cache hits
             # would show TTFT as scheduler-only (~25 ms) instead of real
             # prefill compute, hiding the metric we're trying to verify.
             "--no-enable-prefix-caching"]
+    # Measure what recommend.py emits: graphs on unless the caller opts out.
+    # Verifying an eager server against a graphs-on recommendation would
+    # report the decode gap as a prediction miss.
+    if enforce_eager:
+        cmd += ["--enforce-eager"]
     needs_triton_attn = False
     if quant in ("awq", "gptq", "fp8", "inc", "mxfp4"):
         cmd += [f"--quantization={quant}", f"--kv-cache-dtype={kv_dtype}"]
@@ -264,6 +269,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--container", default=None,
                    help="Container name to create. Defaults to a unique name.")
+    p.add_argument("--enforce-eager", action="store_true",
+                   help="Launch with --enforce-eager, disabling XPU graph "
+                        "capture. Pass it only if the launch line you are "
+                        "verifying has it (recommend.py --enforce-eager, for "
+                        "images before vLLM v0.31.0). Omitted by default.")
     args = p.parse_args(argv)
 
     _ensure_docker()
@@ -276,14 +286,15 @@ def main(argv: list[str] | None = None) -> int:
     container = args.container or f"vllm-config-verify-{os.getpid()}"
 
     print(f"Verifying {args.model}  quant={args.quant}  kv-dtype={kv_dtype}  "
-          f"ctx={args.ctx}  c={args.concurrency}")
+          f"ctx={args.ctx}  c={args.concurrency}  "
+          f"xpu-graphs={'off' if args.enforce_eager else 'on'}")
     print(f"Predicted (for ~{bench_prompt_tokens}-tok prompts):")
     print(f"  TTFT band: {pred['ttft_ms'][0]:.0f}–{pred['ttft_ms'][1]:.0f} ms")
     print(f"  TPOT band: {pred['tpot_ms'][0]:.1f}–{pred['tpot_ms'][1]:.1f} ms")
     print()
     print(f"Launching server (image {args.image})...")
     launch(args.image, args.model, args.quant, kv_dtype, args.ctx,
-           args.concurrency, args.port, container)
+           args.concurrency, args.port, container, args.enforce_eager)
     try:
         wait_ready(args.port)
         # Bound the prompt size to a fraction of ctx so it always fits.

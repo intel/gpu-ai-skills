@@ -8,8 +8,10 @@ Run a short reference bench on the user's host and image, measure the
 actual MFU/BWE vLLM achieves, cache the result, then call recommend.py
 with the calibrated factors.
 
-The cached calibration is keyed by (image digest, device id). It auto-
-invalidates when the image is re-pulled or the device changes.
+The cached calibration is keyed by (image digest, device id, eager mode).
+It auto-invalidates when the image is re-pulled or the device changes.
+The bench runs with XPU graphs on, matching what recommend.py emits; pass
+--enforce-eager to calibrate an eager launch instead (pre-v0.31.0 images).
 
 Usage:
     python3 scripts/calibrate.py \\
@@ -41,9 +43,12 @@ def image_digest(image: str) -> str:
     return docker_image_id(image)
 
 
-def cache_path(image: str, device_id: str) -> Path:
+def cache_path(image: str, device_id: str, enforce_eager: bool = False) -> Path:
     digest = image_digest(image).replace(":", "_").replace("/", "_")[:64]
-    return CACHE / f"{device_id}__{digest}.json"
+    # Eager and graphs-on runs measure different BWE, so they get separate
+    # files rather than overwriting each other.
+    suffix = "__eager" if enforce_eager else ""
+    return CACHE / f"{device_id}__{digest}{suffix}.json"
 
 
 def fetch_param_count(model_id: str) -> int:
@@ -58,7 +63,8 @@ def fetch_param_count(model_id: str) -> int:
 def run_reference_bench(image: str, model_id: str, port: int = 8765,
                         warmup: int = 5, num_prompts: int = 30,
                         prompt_tokens: int = 512,
-                        gen_tokens: int = 64) -> dict:
+                        gen_tokens: int = 64,
+                        enforce_eager: bool = False) -> dict:
     """Launch a vLLM-XPU server, send warmup + timed bench, return measurements.
 
     Tries the model in BF16 (no quant) so we measure the BF16 compute tier
@@ -80,10 +86,14 @@ def run_reference_bench(image: str, model_id: str, port: int = 8765,
         image,
         model_id,
         "--dtype", "bfloat16",
-        "--enforce-eager",
         "--max-model-len", "2048",
         "--gpu-memory-utilization", "0.85",
     ]
+    # Graphs on unless the caller opts out, so the factors describe the
+    # launch recommend.py emits. Calibrating eager and applying the result to
+    # a graphs-on launch would understate BWE and inflate predicted TPOT.
+    if enforce_eager:
+        cmd += ["--enforce-eager"]
     if os.environ.get("HF_TOKEN"):
         cmd[5:5] = ["-e", f"HF_TOKEN={os.environ['HF_TOKEN']}"]
     subprocess.run(cmd, check=True, capture_output=True)
@@ -128,6 +138,7 @@ def run_reference_bench(image: str, model_id: str, port: int = 8765,
             "gen_tokens": gen_tokens,
             "ttft_median_ms": median(ttfts),
             "tpot_median_ms": median(tpots),
+            "enforce_eager": enforce_eager,
         }
     finally:
         subprocess.run(["docker", "stop", container],
@@ -206,12 +217,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--prompt-tokens", type=int, default=512)
     p.add_argument("--show", action="store_true",
                    help="Print the cached calibration if any and exit")
+    p.add_argument("--enforce-eager", action="store_true",
+                   help="Calibrate with --enforce-eager, disabling XPU graph "
+                        "capture. Only for images before vLLM v0.31.0; pair "
+                        "with recommend.py --enforce-eager --use-calibration. "
+                        "Omitted by default.")
     args = p.parse_args(argv)
 
     if not shutil.which("docker"):
         sys.exit("docker is required for calibration. Install docker, then retry.")
 
-    cf = cache_path(args.image, args.device)
+    cf = cache_path(args.image, args.device, args.enforce_eager)
     if args.show:
         if cf.exists():
             print(cf.read_text())
@@ -222,13 +238,15 @@ def main(argv: list[str] | None = None) -> int:
     device = next(d for d in HW["devices"] if d["id"] == args.device)
     print(f"Calibrating {device['name']} against {args.image}")
     print(f"Reference model: {args.reference_model}")
+    print(f"XPU graphs:      {'off (--enforce-eager)' if args.enforce_eager else 'on'}")
     print(f"Cache target:    {cf}")
     print()
 
     measurement = run_reference_bench(args.image, args.reference_model,
                                       port=args.port,
                                       num_prompts=args.num_prompts,
-                                      prompt_tokens=args.prompt_tokens)
+                                      prompt_tokens=args.prompt_tokens,
+                                      enforce_eager=args.enforce_eager)
     factors = derive_factors(measurement, device)
     # Record the image string so recommend.py --use-calibration can find this
     # file by its content. The filename is keyed by the image *digest*, but the
@@ -236,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
     # digest-named file is otherwise unreachable once docker resolves a digest.
     factors["image"] = args.image
     factors["device"] = args.device
+    factors["enforce_eager"] = args.enforce_eager
     cf.parent.mkdir(parents=True, exist_ok=True)
     cf.write_text(json.dumps(factors, indent=2))
     print()
@@ -246,7 +265,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  measured BWE = {factors['bwe_measured']:.2f}  "
           f"(table default range was {default['bwe_min']:.2f}-{default['bwe_max']:.2f})")
     print()
-    print("Run recommend.py with --use-calibration to anchor predictions to this.")
+    print("Run recommend.py with --use-calibration"
+          + (" --enforce-eager" if args.enforce_eager else "")
+          + " to anchor predictions to this.")
     return 0
 
 
