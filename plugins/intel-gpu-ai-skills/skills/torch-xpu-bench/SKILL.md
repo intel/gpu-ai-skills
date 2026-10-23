@@ -18,7 +18,8 @@ Use cases:
 
 - TTFT and decode rate of a single sequence at a given dtype.
 - A/B dtypes (bf16 vs fp16), compile on/off, model size.
-- Confirm `--enforce-eager` is hurting in vLLM before flipping it.
+- Decide whether `--enforce-eager` is worth adding in vLLM for a
+  problem model (graphs are on by default from v0.31.0).
 - Validate **model-can-it-fit** predictions against `max_memory_allocated`.
 
 For diffusion and encoder-only models, see
@@ -117,16 +118,20 @@ Same shape for `--compile` on/off, model A vs B.
 
 ## When `torch.compile` actually helps
 
-Confirm the compile speedup pattern on Battlemage before flipping
-`--enforce-eager` in vLLM:
+vLLM v0.31.0+ captures XPU graphs by default, so the compiled path is
+already what you serve. Use this to confirm the pattern on Battlemage
+before you consider adding `--enforce-eager` back for a model that
+misbehaves under capture:
 
 ```sh
 python3 {base_dir}/scripts/bench.py --model "$M" --runs 5             # eager
 python3 {base_dir}/scripts/bench.py --model "$M" --compile --runs 5   # compiled
 ```
 
-If compiled wins on decode (ms/tok) and content is correct, drop
-`--enforce-eager` in **vllm-xpu-run** for that model.
+If compiled wins on decode (ms/tok) and content is correct, leave
+graphs on in **vllm-xpu-run** — emit no `--enforce-eager`. Only if
+eager measures faster, or compiled output is wrong, is the flag
+justified for that model.
 
 Compile gain scales with model size — sub-1B models see little win
 because launch overhead and kernel work are similar in magnitude.

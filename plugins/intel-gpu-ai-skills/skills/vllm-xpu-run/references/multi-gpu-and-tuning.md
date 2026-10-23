@@ -39,7 +39,6 @@ docker run -d --name vllm-xpu \
     vllm/vllm-openai-xpu:latest \
     <model-id> \
         --dtype bfloat16 \
-        --enforce-eager \
         --block-size=64 \
         --disable-custom-all-reduce \
         --tensor-parallel-size "$TP"

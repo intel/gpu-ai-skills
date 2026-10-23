@@ -450,7 +450,8 @@ def emit_launch_line(model_id: str, quant: str, kv_dtype: str, tp: int,
                      ctx: int, available_variants: dict, cfg: dict,
                      dp: int = 1, gpu_memory_utilization: float = 0.85,
                      trust_remote_code: bool = False,
-                     revision: str | None = None) -> str:
+                     revision: str | None = None,
+                     enforce_eager: bool = False) -> str:
     """Emit a copy-pasteable Docker launch for the image's serve entrypoint.
 
     ``trust_remote_code`` is the caller's explicit opt-in. It is deliberately
@@ -560,7 +561,11 @@ def emit_launch_line(model_id: str, quant: str, kv_dtype: str, tp: int,
 
     flags = " \\\n        ".join(filter(None, [
         "--dtype bfloat16" if quant in ("bf16", "fp16") else "",
-        "--enforce-eager",
+        # Graphs stay on unless the caller opts out. vLLM-XPU v0.31.0+ captures
+        # XPU graphs by default; --enforce-eager disables that and costs roughly
+        # 2x decode (measured TPOT 64 ms vs 36 ms, 4x Arc Pro B70 at
+        # concurrency 8) while leaving TTFT unchanged.
+        "--enforce-eager" if enforce_eager else "",
         "--block-size=64",
         trc_flag,
         rev_flag,
@@ -659,7 +664,8 @@ def render(model_id: str, d: ModelDims, params: int, device: dict, framework: st
            available_variants: dict, cfg: dict,
            gpu_memory_utilization: float,
            trust_remote_code: bool = False,
-           revision: str | None = None) -> str:
+           revision: str | None = None,
+           enforce_eager: bool = False) -> str:
     out = []
     active = active_params(d)
     per_token = (f", {active/1e9:.2f} B read per token" if active < 0.9 * params
@@ -730,7 +736,8 @@ def render(model_id: str, d: ModelDims, params: int, device: dict, framework: st
     out.append(emit_launch_line(model_id, top.quant, top.kv_dtype, top.tp,
                                 ctx, available_variants, cfg, top.dp,
                                 gpu_memory_utilization,
-                                trust_remote_code, revision))
+                                trust_remote_code, revision,
+                                enforce_eager))
     out.append("")
     out.append("=== Verify before trusting ===")
     out.append("These are roofline-bounded predictions. Run vllm-xpu-bench against the launched")
@@ -768,6 +775,13 @@ def main(argv: list[str] | None = None) -> int:
                    choices=("recommend",))
     p.add_argument("--no-hub-search", action="store_true",
                    help="Skip live HF Hub query for quant variants (offline mode).")
+    p.add_argument("--enforce-eager", action="store_true",
+                   help="Add --enforce-eager to the emitted launch line, "
+                        "disabling XPU graph capture. Only for images before "
+                        "vLLM v0.31.0, where capture was experimental. From "
+                        "v0.31.0 graphs capture by default and disabling them "
+                        "costs roughly 2x decode, so the flag is omitted "
+                        "unless you pass this.")
     p.add_argument("--trust-remote-code", action="store_true",
                    help="Security opt-in. Add --trust-remote-code to the emitted "
                         "launch line for models whose config.json declares "
@@ -884,7 +898,8 @@ def main(argv: list[str] | None = None) -> int:
     print(render(args.model, d, params, device, args.runtime,
                  args.ctx, args.concurrency, candidates, available, cfg,
                  args.gpu_memory_utilization,
-                 args.trust_remote_code, args.revision))
+                 args.trust_remote_code, args.revision,
+                 args.enforce_eager))
     return 0
 
 

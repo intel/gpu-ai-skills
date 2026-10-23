@@ -41,7 +41,7 @@ docker run -d --name vllm-xpu-prof \
     -p 8000:8000 \
    vllm/vllm-openai-xpu:latest \
    Qwen/Qwen2.5-1.5B-Instruct \
-        --dtype bfloat16 --enforce-eager --max-model-len 4096 \
+        --dtype bfloat16 --max-model-len 4096 \
         --profiler-config.profiler=torch \
         --profiler-config.torch_profiler_dir=/work/traces
 ```
@@ -126,7 +126,6 @@ docker run --rm \
    bench latency \
         --model Qwen/Qwen2.5-1.5B-Instruct \
         --dtype bfloat16 \
-        --enforce-eager \
         --num-iters-warmup 2 --num-iters 5 \
         --profile \
         --profiler-config.profiler=torch \
@@ -145,8 +144,14 @@ docker run --rm \
    docker logs <name> 2>&1 | grep -E "attention_backend|Using.*backend"
    ```
 3. **Gaps between steps** — wide white bands at boundaries mean
-   scheduler / KV manager is on the critical path. Normal under
-   `--enforce-eager`; tighter without it.
+   scheduler / KV manager is on the critical path. Expected to be
+   tight on v0.31.0+, where XPU graphs capture by default; wide bands
+   there are a real finding. They are normal under `--enforce-eager`,
+   so check whether the server was launched with it before chasing
+   them. Profile the configuration you actually serve — adding eager
+   just to get a cleaner trace changes the thing you are measuring,
+   though it is a legitimate second run when you need per-kernel
+   granularity that graph capture collapses.
 4. **Quant kernel names** — for `--quantization fp8` expect
    `fp8_gemm_w8a16`; for `awq` expect `int4_gemm_w4a8`. Seeing
    `int4_gemm_w4a16` with AWQ -> silent fall-through (vLLM #38064).
