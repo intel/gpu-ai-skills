@@ -7,9 +7,13 @@ description: Benchmark a **running vLLM-XPU OpenAI-compatible server** on an Int
 
 `vllm bench` is the same CLI on Intel as on CUDA. The XPU-specific
 levers are the serve-side flags from **vllm-xpu-run**
-(`--enforce-eager`, `--max-model-len`, `--gpu-memory-utilization`,
-`--block-size=64`). Pure measurement; for fixes see profiling
-skills.
+(`--max-model-len`, `--gpu-memory-utilization`, `--block-size=64`).
+Pure measurement; for fixes see profiling skills.
+
+Leave XPU graphs on when benchmarking v0.31.0+ images: adding
+`--enforce-eager` roughly halves decode throughput (measured TPOT
+64 ms vs 36 ms), so an eager baseline understates what the deployment
+will actually do.
 
 ## Preflight — find the container and verify the server
 
@@ -78,7 +82,6 @@ docker run -d --name <container-name> \
     vllm/vllm-openai-xpu:latest \
     <model-id> \
         --dtype bfloat16 \
-        --enforce-eager \
         --block-size=64 \
         --max-model-len 4096 \
         --gpu-memory-utilization 0.85 \
@@ -226,7 +229,6 @@ docker run --rm \
     bench throughput \
         --model Qwen/Qwen2.5-1.5B-Instruct \
         --dtype bfloat16 \
-        --enforce-eager \
         --max-model-len 4096 \
         --gpu-memory-utilization 0.85 \
         --dataset-name random \

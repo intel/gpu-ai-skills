@@ -5731,5 +5731,116 @@ class TestVerifyUsesTheSameBand:
         assert common.active_params(d) < 0.25 * common.count_params(d)
 
 
+class TestEagerIsOptInAcrossTiers:
+    """recommend, calibrate, and verify must all launch graphs-on by default.
+
+    From vLLM v0.31.0 XPU graphs capture by default, so a tier that still
+    hardcodes --enforce-eager measures a server nobody deploys.
+    """
+
+    class _Launched(Exception):
+        pass
+
+    @staticmethod
+    def _script(name):
+        import importlib
+        path = (git_root / 'plugins/intel-gpu-ai-skills/skills'
+                / 'model-config-recommend' / 'scripts')
+        sys.path.insert(0, str(path))
+        try:
+            return importlib.import_module(name)
+        finally:
+            sys.path.remove(str(path))
+
+    def _verify_cmd(self, monkeypatch, **kw):
+        verify = self._script("verify")
+        seen = []
+        monkeypatch.setattr(verify, "_container_exists", lambda name: False)
+        monkeypatch.setattr(verify.subprocess, "run",
+                            lambda cmd, **_: seen.append(cmd))
+        verify.launch("img", "Qwen/Qwen2.5-1.5B-Instruct", "bf16", "bfloat16",
+                      4096, 4, 8765, "c", **kw)
+        return seen[0]
+
+    def _calibrate_cmd(self, monkeypatch, **kw):
+        calibrate = self._script("calibrate")
+        seen = []
+
+        def fake_run(cmd, **_):
+            seen.append(cmd)
+            raise self._Launched
+        monkeypatch.setattr(calibrate.subprocess, "run", fake_run)
+        with pytest.raises(self._Launched):
+            calibrate.run_reference_bench("img", "Qwen/Qwen2.5-1.5B-Instruct", **kw)
+        return seen[0]
+
+    def test_verify_launches_graphs_on_by_default(self, monkeypatch):
+        assert "--enforce-eager" not in self._verify_cmd(monkeypatch)
+
+    def test_verify_enforce_eager_is_opt_in(self, monkeypatch):
+        cmd = self._verify_cmd(monkeypatch, enforce_eager=True)
+        assert cmd.count("--enforce-eager") == 1
+        assert cmd.index("--enforce-eager") > cmd.index("img")
+
+    def test_calibrate_launches_graphs_on_by_default(self, monkeypatch):
+        assert "--enforce-eager" not in self._calibrate_cmd(monkeypatch)
+
+    def test_calibrate_enforce_eager_is_opt_in(self, monkeypatch):
+        cmd = self._calibrate_cmd(monkeypatch, enforce_eager=True)
+        assert cmd.count("--enforce-eager") == 1
+        assert cmd.index("--enforce-eager") > cmd.index("img")
+
+    def test_calibration_cache_is_keyed_by_mode(self, monkeypatch):
+        calibrate = self._script("calibrate")
+        monkeypatch.setattr(calibrate, "image_digest", lambda image: "sha256:abc")
+        graphs = calibrate.cache_path("img", "arc-pro-b70")
+        eager = calibrate.cache_path("img", "arc-pro-b70", enforce_eager=True)
+        assert graphs != eager
+        assert graphs.name == "arc-pro-b70__sha256_abc.json"
+
+    def _use_calibration(self, monkeypatch, tmp_path, files, *extra):
+        recommend = self._script("recommend")
+        cache = tmp_path / ".cache" / "intel-gpu-ai-skills" / "calibration"
+        cache.mkdir(parents=True)
+        for name, body in files.items():
+            (cache / name).write_text(json.dumps(body))
+        monkeypatch.setenv("HOME", str(tmp_path))
+
+        def stop(*_a, **_k):
+            raise self._Launched
+        # Calibration is resolved before the model config is fetched; stop
+        # there so the test needs no network.
+        monkeypatch.setattr(recommend, "fetch_config", stop)
+        argv = ["--model", "Qwen/Qwen2.5-1.5B-Instruct", "--device", "arc-pro-b70",
+                "--use-calibration", "img:tag", *extra]
+        return recommend, argv
+
+    @staticmethod
+    def _cal(eager=None, mfu=0.3, bwe=0.6):
+        body = {"mfu_measured": mfu, "bwe_measured": bwe, "image": "img:tag"}
+        if eager is not None:
+            body["enforce_eager"] = eager
+        return body
+
+    def test_use_calibration_picks_matching_mode(self, monkeypatch, tmp_path, capsys):
+        files = {"arc-pro-b70__d1.json": self._cal(False, bwe=0.8),
+                 "arc-pro-b70__d1__eager.json": self._cal(True, bwe=0.5)}
+        for extra, want in (((), "__d1.json"), (("--enforce-eager",), "__d1__eager.json")):
+            recommend, argv = self._use_calibration(monkeypatch, tmp_path / want, files, *extra)
+            with pytest.raises(self._Launched):
+                recommend.main(argv)
+            assert f"Using calibration from arc-pro-b70{want}" in capsys.readouterr().out
+
+    def test_legacy_calibration_counts_as_eager(self, monkeypatch, tmp_path):
+        # Files written before the mode key existed were always eager runs.
+        files = {"arc-pro-b70__d1.json": self._cal(None)}
+        recommend, argv = self._use_calibration(monkeypatch, tmp_path, files)
+        with pytest.raises(SystemExit) as exc:
+            recommend.main(argv)
+        assert "Only eager calibration cached" in str(exc.value)
+        with pytest.raises(self._Launched):
+            recommend.main(argv + ["--enforce-eager"])
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v", "-s"]))

@@ -20,6 +20,7 @@ image="${VLLM_XPU_IMAGE:-vllm/vllm-openai-xpu:latest}"
 port=8000
 container_name="vllm-xpu"
 trust_remote_code=0
+enforce_eager=0
 
 usage() {
     cat <<'EOF'
@@ -38,6 +39,9 @@ Options:
   --port N              First host port to publish (default: 8000)
   --container-name N    Base container name (default: vllm-xpu)
   --trust-remote-code   Add --trust-remote-code
+  --enforce-eager       Add --enforce-eager, disabling XPU graph capture.
+                        Only for images before vLLM v0.31.0, where graph
+                        capture was experimental. Omitted by default.
   -h, --help            Show this help
 EOF
 }
@@ -72,6 +76,7 @@ while [ "$#" -gt 0 ]; do
         --port)              port="${2:-}"; shift 2 ;;
         --container-name)    container_name="${2:-}"; shift 2 ;;
         --trust-remote-code) trust_remote_code=1; shift ;;
+        --enforce-eager)     enforce_eager=1; shift ;;
         -h|--help)           usage; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
@@ -165,10 +170,20 @@ if [ "$required_xpus" -gt "$num_xpus" ]; then
     die "topology requires $required_xpus XPU(s), but --num-xpus is $num_xpus"
 fi
 
-serve_flags="--enforce-eager \\
-        --block-size=64 \\
+serve_flags="--block-size=64 \\
         --max-model-len $ctx \\
         --gpu-memory-utilization 0.85"
+
+# XPU graph capture is left on by default. From vLLM v0.31.0 graphs capture
+# automatically and VLLM_XPU_ENABLE_XPU_GRAPH no longer exists; --enforce-eager
+# turns off exactly what that version enables, costing roughly 2x decode
+# (measured TPOT 64 ms vs 36 ms, 4x Arc Pro B70 at concurrency 8). It does not
+# change TTFT, so eager is never the explanation for a slow first token. Pass
+# --enforce-eager only for pre-v0.31.0 images, where capture was experimental.
+if [ "$enforce_eager" -eq 1 ]; then
+    serve_flags="--enforce-eager \\
+        $serve_flags"
+fi
 
 case "$quant" in
     bf16|fp16)

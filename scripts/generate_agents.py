@@ -54,14 +54,17 @@ def main() -> int:
         sk = d / "SKILL.md"
         if not sk.exists():
             continue
-        fm = parse_frontmatter(sk.read_text())
+        # Explicit utf-8: SKILL.md bodies carry non-ASCII (arrows, box glyphs),
+        # and read_text() without an encoding uses the locale default -- cp1252
+        # on a stock Windows Python, which raises UnicodeDecodeError.
+        fm = parse_frontmatter(sk.read_text(encoding="utf-8"))
         if "name" not in fm or "description" not in fm:
             print(f"warn: {sk} missing name or description", file=sys.stderr)
             continue
         entries.append((fm["name"], fm["description"], sk.relative_to(REPO)))
 
     OUT.parent.mkdir(exist_ok=True)
-    with OUT.open("w") as f:
+    with OUT.open("w", encoding="utf-8", newline="\n") as f:
         f.write("---\n")
         f.write("name: intel-gpu-ai-skills-agent\n")
         f.write("description: Router agent exposing Intel GPU AI skill packs ")
