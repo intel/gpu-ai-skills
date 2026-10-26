@@ -65,6 +65,14 @@
       "description": "Serve a Hugging Face safetensors model on an Intel GPU with upstream vLLM-XPU's OpenAI-compatible API, or check whether a model or architecture is currently documented on XPU. Covers live support lookup, image choice, container launch, known serve-flag requirements, model-impl fallback, and attention/quant compatibility. Use to launch /v1/chat/completions or /v1/completions, troubleshoot a launch, or check model support. Not for choosing the best quantization, KV dtype, DP/TP layout, context, or concurrency (use model-config-recommend)."
     },
     {
+      "name": "vllm-omni-xpu-run",
+      "source": "./plugins/intel-gpu-ai-skills/skills/vllm-omni-xpu-run",
+      "skills": [
+        "./"
+      ],
+      "description": "Bring up a vLLM-Omni server (`vllm serve --omni`) on Intel Arc / Arc Pro B-series GPUs (XPU) for omni-modality and generative models — Qwen2.5-Omni / Qwen3-Omni chat, text-to-image (Qwen-Image, Z-Image, FLUX), video (Wan) and TTS (Qwen3-TTS). Covers building the image from upstream `docker/Dockerfile.xpu` on the matching `vllm/vllm-openai-xpu` base (no prebuilt XPU image or wheel exists), container flags, per-stage device placement with `--stage-overrides`, single-card layouts, and output-validated smoke tests for chat, image and speech endpoints. Use for any vLLM-Omni request on Intel XPU. Not for text-only LLM serving (use vllm-xpu-run)."
+    },
+    {
       "name": "sglang-xpu-run",
       "source": "./plugins/intel-gpu-ai-skills/skills/sglang-xpu-run",
       "skills": [
