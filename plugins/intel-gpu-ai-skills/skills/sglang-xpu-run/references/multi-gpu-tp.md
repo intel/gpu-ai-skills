@@ -37,11 +37,14 @@ as the launch:
 
 ```sh
 RENDER_GID=$(getent group render | cut -d: -f3)
+# Same image as the hanging server. If IMG is not already set in this shell:
+#   IMG=lmsysorg/sglang:<tag from SKILL.md Step 1>
+: "${IMG:?resolve the image first — see SKILL.md Step 1}"
 docker run --rm --ipc=host --shm-size=2g --network host \
     --device /dev/dri -v /dev/dri/by-path:/dev/dri/by-path \
     --group-add "$RENDER_GID" -e ZE_AFFINITY_MASK=0,1 -e FI_TCP_IFACE=lo \
     -v "<skill-dir>/scripts/tp_collective_probe.py:/probe.py:ro" \
-    lmsysorg/sglang:v0.5.20-xpu python3 /probe.py
+    "$IMG" python3 /probe.py
 ```
 
 `<skill-dir>` is the installed `sglang-xpu-run` directory. Pass
@@ -54,7 +57,7 @@ docker run --rm --ipc=host --shm-size=2g --network host \
 | `NOT ENOUGH XPUS` (2) | `ZE_AFFINITY_MASK` exposes fewer XPUs than `--world-size`. |
 | traceback (1) | A different problem entirely. |
 
-Measured probe verdicts on the verified host:
+Measured probe verdicts on the verified host (re-checked at v0.5.22):
 
 | Probe configuration | Verdict |
 |---|---|
@@ -62,16 +65,40 @@ Measured probe verdicts on the verified host:
 | `--network host`, no env var | `COLLECTIVE HUNG` (log ends at the `CCL_WARN` lines) |
 | `--network host`, `FI_TCP_IFACE=lo` | `COLLECTIVE OK` in 6 s |
 
-Serving results with and without the pin, measured on 2× Arc Pro B70 with
-`lmsysorg/sglang:v0.5.20-xpu`, Qwen3-0.6B:
+Serving results with and without the pin, measured on 2× Arc Pro B70,
+Qwen3-0.6B:
 
 | | ready | first request | warm request |
 |---|---|---|---|
-| `--tp 2`, no `FI_TCP_IFACE` | 28–30 s | **never returns** | — |
-| `--tp 2`, `FI_TCP_IFACE=lo` | 28–30 s | ~6 s | ~0.8 s |
+| `--tp 2`, no `FI_TCP_IFACE` | ~27 s | **never returns** (hung >120 s) | — |
+| `--tp 2`, `FI_TCP_IFACE=lo` | ~27 s | ~5 s | under 1 s |
+
+**The hang has survived every release bump so far** (re-tested at v0.5.21 and
+v0.5.22; `fi_info -p shm` is still empty in the v0.5.22 image), so do not
+treat a newer tag as a reason to drop the variable. The no-pin run reaches `/v1/models` and
+then sits on the first request until the client's own timeout — exactly the
+documented signature.
 
 After the fix both cards hold comparable memory (~27 GB each for this
 model+KV) and `Prefill batch` / `Decode batch` lines appear in the log.
+
+## When a TP smoke request times out
+
+The verify block's `--max-time` fired on a server that reported ready. In
+order:
+
+1. Confirm the pin reached the container:
+   `docker inspect -f '{{.Config.Env}}' sglang-xpu-tp` must list
+   `FI_TCP_IFACE=lo`. A missing variable means the launch line was edited.
+2. Run the probe (above) with the same network mode and mask. `COLLECTIVE
+   HUNG` is this transport problem; `COLLECTIVE OK` means the hang is
+   elsewhere — take the py-spy dump below, then retry at a lower `--tp`
+   (upstream records engine-side Level Zero hangs on some Arc/B-series hosts;
+   see Notes).
+3. Healthy numbers to compare against (Qwen3-0.6B, 2× B70): ready ~27 s,
+   first request ~5–6 s, under 1 s warm, and comparable memory on both cards
+   in `xpu-smi dump -m 18`. Garbage `content` with a fast response is a
+   `--tp` / `ZE_AFFINITY_MASK` mismatch rather than quantization.
 
 ## Root cause: host topology + a missing shared-memory provider
 
@@ -196,6 +223,34 @@ All tested on the verified host; each still hung with no first response:
 PCIe root complexes (no P2P) is *not* the cause — a host-staged transport
 would have worked; the transport simply never connected.
 
+## Decode context parallelism (`--dcp-size`, new in v0.5.22)
+
+DCP shards the KV cache across the ranks of a TP group by token position and
+merges partial attention by log-sum-exp. Upstream marks it experimental on
+XPU; it needs `intel_xpu` attention. Verified on 2× Arc Pro B70 with
+upstream's own example:
+
+```sh
+python3 -m sglang.launch_server --model Qwen/Qwen3.5-4B --device xpu \
+    --attention-backend intel_xpu --tp 2 --dcp-size 2 \
+    --disable-radix-cache --mem-fraction-static 0.60 \
+    --host 0.0.0.0 --port 30000      # docker run ... -e FI_TCP_IFACE=lo
+```
+
+| `--tp 2`, Qwen3.5-4B | max total tokens | 256-token decode, warm |
+|---|---|---|
+| without `--dcp-size` | 507,008 | 10.0 s |
+| `--dcp-size 2` (`a2a` comm, the XPU default) | 504,832 | 11.0 s |
+
+Output is correct, but on two cards **DCP bought no capacity and cost ~10%
+decode time**: it only grows the servable context when `tp_size` exceeds the
+model's KV-head count (otherwise TP already splits the KV heads), which on a
+2-card host means 1-KV-head models. The ~70 s first request is not DCP (same
+without it): it is the Triton JIT for Qwen3.5's linear-attention layers.
+`--linear-attn-backend intel_xpu` cut it to 6–20 s at TP=1
+(`model-recipes.md`); that flag was not re-tested with DCP. If startup fails with
+`UR_RESULT_ERROR_OUT_OF_RESOURCES`, lower `--mem-fraction-static`.
+
 ## Notes
 
 - Upstream's XPU CI does cover TP, nightly only: Llama-3.1-8B at TP=2 and
@@ -213,8 +268,8 @@ would have worked; the transport simply never connected.
     (`python/sglang/test/xpu/simple_eval_gsm8k_xpu_mixin.py`).
 
   Neither reproduced on the verified host (2× Arc Pro B70, TP=2, 32
-  concurrent requests); TP=4 is untested here. If a TP launch hangs with
-  `FI_TCP_IFACE=lo` set and the probe passes, retry at a lower `--tp`.
+  concurrent requests). If a TP launch hangs with `FI_TCP_IFACE=lo` set and
+  the probe passes, retry at a lower `--tp`.
 - On a single-NIC host the default interface choice may happen to work.
   Setting `FI_TCP_IFACE=lo` anyway costs nothing and removes the variable.
 - The same class of failure is why upstream's P/D disaggregation docs set
