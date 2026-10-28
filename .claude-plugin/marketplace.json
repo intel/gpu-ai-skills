@@ -4,7 +4,7 @@
     "name": "Rahul Unnikrishnan Nair"
   },
   "metadata": {
-    "description": "Agent Skills for running, benchmarking, profiling, and fixing Hugging Face safetensors models on Intel GPUs (Arc, Arc Pro, Battlemage, Data Center GPU Max). Complements vllm-project/vllm-skills (NVIDIA) and huggingface/skills (Hub workflows).",
+    "description": "Agent Skills for running, benchmarking, profiling, and fixing Hugging Face safetensors models on Intel GPUs (Arc, Arc Pro, Battlemage). Complements vllm-project/vllm-skills (NVIDIA) and huggingface/skills (Hub workflows).",
     "version": "0.1.0"
   },
   "plugins": [
@@ -46,7 +46,7 @@
       "skills": [
         "./"
       ],
-      "description": "Launch a Docker container with Intel GPU access on Linux. Encodes the correct combination of `--device /dev/dri`, render-group access, `--ipc=host`, `ZE_AFFINITY_MASK` pinning, Hugging Face cache mount, and `--entrypoint /bin/bash` for interactive use. Use when running any Intel-XPU container (vLLM-XPU, sglang-xpu, torch-XPU, llama.cpp SYCL, etc.) and the device must be visible inside. The CUDA analogue is `docker run --gpus all` \u2014 Intel has no `--gpus` flag, you pass the Direct Rendering Manager (DRM) nodes directly."
+      "description": "Launch a Docker container with Intel GPU access on Linux. Encodes the correct combination of `--device /dev/dri`, render-group access, `--ipc=host`, `ZE_AFFINITY_MASK` pinning, Hugging Face cache mount, and `--entrypoint /bin/bash` for interactive use. Use when running any Intel-XPU container (vLLM-XPU, sglang-xpu, torch-XPU, llama.cpp SYCL, etc.) and the device must be visible inside. The CUDA analogue is `docker run --gpus all` — Intel has no `--gpus` flag, you pass the Direct Rendering Manager (DRM) nodes directly."
     },
     {
       "name": "torch-xpu-run",
@@ -54,7 +54,7 @@
       "skills": [
         "./"
       ],
-      "description": "Run an arbitrary Hugging Face safetensors model on an Intel GPU using **upstream PyTorch** (>= 2.8) with the built-in `torch.xpu` device. Covers loading from the Hub, picking the right dtype, autocast, multi-GPU with accelerate's `device_map`, and the CUDA -> XPU code translation a user has to do once. Use for the Transformers / Accelerate / Diffusers path. Not for OpenAI-compatible serving (use vllm-xpu-run); explicitly not via intel-extension-for-pytorch (ipex) or ipex-llm \u2014 those paths are end-of-life and upstream PyTorch supersedes them."
+      "description": "Run an arbitrary Hugging Face safetensors model on an Intel GPU using **upstream PyTorch** (>= 2.8) with the built-in `torch.xpu` device. Covers loading from the Hub, picking the right dtype, autocast, multi-GPU with accelerate's `device_map`, and the CUDA -> XPU code translation a user has to do once. Use for the Transformers / Accelerate / Diffusers path. Not for OpenAI-compatible serving (use vllm-xpu-run); explicitly not via intel-extension-for-pytorch (ipex) or ipex-llm — those paths are end-of-life and upstream PyTorch supersedes them."
     },
     {
       "name": "vllm-xpu-run",
@@ -70,7 +70,7 @@
       "skills": [
         "./"
       ],
-      "description": "Serve a Hugging Face safetensors model on an Intel GPU using SGLang's XPU backend with the OpenAI-compatible API. Covers pulling the official `lmsysorg/sglang:v0.5.20-xpu` release image, the container flag set for Intel DRM devices, the UMD/kernel pairing the image pins, the `--device xpu --attention-backend intel_xpu` flag set, page-size and quantization constraints, multimodal serving, and how to validate output content (not just HTTP 200). Use when the user needs SGLang's RadixAttention prefix caching or grammar-constrained output; for broad-coverage serving on Intel today prefer vllm-xpu-run, and for benchmarking a running server use sglang-xpu-bench."
+      "description": "Serve a Hugging Face safetensors model on an Intel GPU using SGLang's XPU backend with the OpenAI-compatible API. Pins the validated `lmsysorg/sglang:v<version>-xpu` release image and flags newer unvalidated releases, then covers the container flag set for Intel DRM devices, the UMD/kernel pairing the image pins, the `--device xpu --attention-backend intel_xpu` flag set, page-size and quantization constraints, multimodal serving, and how to validate output content (not just HTTP 200). Use when the user needs SGLang's RadixAttention prefix caching or grammar-constrained output; for broad-coverage serving on Intel today prefer vllm-xpu-run, and for benchmarking a running server use sglang-xpu-bench."
     },
     {
       "name": "vllm-xpu-bench",
@@ -150,7 +150,7 @@
       "skills": [
         "./"
       ],
-      "description": "First-time setup for Intel XPU/GPU hosts. Detects what's missing and installs xpu-smi, configures user groups (render), sets up Intel GPU PPA repository, installs Level Zero runtime, installs Docker, and runs a post-setup verification gate. Prompts before each installation by default (use --auto for unattended). Also handles Battlemage (Arc Pro B60/B70) prerequisites on Ubuntu 24.04: nomodeset removal, OEM kernel upgrade, and compute runtime 26.18+ \u2014 use check_battlemage_prerequisites.sh when xpu-smi shows No device discovered or clinfo shows 0 platforms. Use when a bare-metal or minimally-configured machine needs to be prepared for XPU model work."
+      "description": "First-time setup for Intel XPU/GPU hosts. Detects what's missing and installs xpu-smi, configures user groups (render), sets up Intel GPU PPA repository, installs Level Zero runtime, installs Docker, and runs a post-setup verification gate. Prompts before each installation by default (use --auto for unattended). Also handles Battlemage (Arc Pro B60/B70) prerequisites on Ubuntu 24.04: nomodeset removal, OEM kernel upgrade, and compute runtime 26.18+ — use check_battlemage_prerequisites.sh when xpu-smi shows No device discovered or clinfo shows 0 platforms. Use when a bare-metal or minimally-configured machine needs to be prepared for XPU model work."
     },
     {
       "name": "llamacpp-xpu-run",
