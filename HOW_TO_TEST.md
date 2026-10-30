@@ -72,11 +72,22 @@ This validates:
 
 Expected output: `All checks passed.` Anything else is a bug.
 
-Every check above uses only the Python standard library, so this layer runs on
-a bare interpreter. The documentation and script pattern checks shell out to
+Every check above is stdlib-only, so on the release branch this layer runs on a
+bare interpreter. On `main` the gate additionally runs `guardrails/check.py`,
+which needs PyYAML; without it that step prints `PyYAML is required: pip install
+pyyaml` and the gate exits non-zero. On `main`, install it first:
+
+```sh
+python3 -m pip install pyyaml
+```
+
+It is not made a skip when absent on purpose — a missing package must not
+silently switch a gate off.
+
+The documentation and script pattern checks shell out to
 `ripgrep` (`rg`), so have it on your PATH.
 
-One optional package: `tests/xpu-port.sh` needs `libcst` to exercise its
+One further optional package: `tests/xpu-port.sh` needs `libcst` to exercise its
 scanner and rewriter sections. Absent it, that script announces `SKIP: libcst not
 importable` and the rest of the suite still passes. `pip install libcst` if you
 are changing anything under the `xpu-port` skill.
@@ -288,7 +299,7 @@ Worked-example pairings used during authoring:
 | `xpu-container-run` | Launch `vllm/vllm-openai-xpu:latest` interactively and confirm GPU visibility. `xpu-smi` may be absent from the vLLM image; use `python -c "import torch; print(torch.xpu.device_count())"` as the fallback verification. |
 | `torch-xpu-run` | Load `Qwen/Qwen2.5-0.5B-Instruct` and generate one sentence on XPU. |
 | `vllm-xpu-run` | Serve `Qwen/Qwen2.5-0.5B-Instruct`, curl `/v1/chat/completions`, get a non-empty reply. |
-| `sglang-xpu-run` | Run the pre-flight gate, then serve a model and smoke-test `/v1/chat/completions`. **Two build steps required:** (1) build `sglang-xpu:local` from `docker/xpu.slim.Dockerfile` (~28 min; add `ENV MAX_JOBS=8 CMAKE_BUILD_PARALLEL_LEVEL=8` to avoid OOM on many-core hosts); (2) apply the UMD-pin patch: write the patch Dockerfile into a private scratch dir and build from it — `d=$(mktemp -d); ...write "$d/Dockerfile"...; docker build -t sglang-xpu:local-b580 "$d"` (<5 s). Use `mktemp -d`, not a fixed `/tmp` name: the path is otherwise guessable, and `/tmp` as a build context also uploads every readable file in it to the daemon. Use `vllm/vllm-openai-xpu:latest` and verify its UMD is compatible with the host kernel before copying it. Also add `--group-add "$(stat -c '%g' /dev/dri/renderD128)"` to all `docker run` commands — the sglang image runs as non-root user `sdp` which is not in the render group by default. If the image is absent, the skill correctly redirects to `vllm-xpu-run`; that redirect counts as PASS for the skill's guard logic. |
+| `sglang-xpu-run` | Run the pre-flight gate, then serve a model and smoke-test `/v1/chat/completions`. **No build step:** `docker pull lmsysorg/sglang:v0.5.22-xpu` (the official SGLang XPU release image, ~10 GB compressed) replaces the old local-build + UMD-pin patch dance — that image already pins and `apt-mark hold`s compute-runtime 26.27.39122.11 / IGC 2.38.2. Keep `--group-add "$(getent group render \| cut -d: -f3)"` in every `docker run`: the image runs as root, but the render-group add is what makes the flag set work unprivileged too. If the pinned UMD is newer than the host `xe` KMD supports, `zeInit` fails and the skill correctly redirects to `vllm-xpu-run`; that redirect counts as PASS for the skill's guard logic. |
 | `vllm-xpu-bench` | Bench the running vLLM server, check TTFT/TPOT/throughput land in the predicted shape. |
 | `torch-xpu-bench` | Run `bench.py` on a small causal LM and on diffusion / encoder snippets. |
 | `sglang-xpu-bench` | Run `sglang.bench_serving` against a sglang server (only reachable if the sglang container builds clean on your kernel). |

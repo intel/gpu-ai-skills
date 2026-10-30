@@ -67,6 +67,11 @@ python3 scripts/verify.py --image vllm/vllm-openai-xpu:latest --device arc-pro-b
     --ctx 4096 --concurrency 4
 ```
 
+All three tiers assume XPU graphs on, the vLLM v0.31.0+ default. For a
+pre-v0.31.0 image, pass `--enforce-eager` to every tier so calibration,
+prediction, and verification measure the same launch. Calibrations are cached
+per mode, and `--use-calibration` refuses one taken in the other mode.
+
 For a plain roofline readout without a launch recommendation:
 
 ```sh

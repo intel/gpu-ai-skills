@@ -27,7 +27,8 @@ No "Intel container toolkit" needed; passing the DRM nodes is enough.
 
 Comes from the runner skill:
 - vLLM serving → **vllm-xpu-run** (`vllm/vllm-openai-xpu:latest`)
-- SGLang → **sglang-xpu-run** (`lmsysorg/sglang:v0.5.20-xpu`)
+- SGLang → **sglang-xpu-run** (`lmsysorg/sglang:v<version>-xpu`; that skill
+  pins a validated tag — there is no `latest-xpu`)
 - PyTorch / Transformers → **torch-xpu-run**
 
 `<image>` below is whichever you picked.
@@ -51,6 +52,7 @@ docker run --rm -it \
 
 | Flag | Why |
 |---|---|
+| `--rm -it` | Interactive shell, removed on exit. `-it` needs a real terminal — from CI, an agent, or `ssh host cmd`, drop it (see Common errors). |
 | `--device /dev/dri` | Pass every Intel GPU's DRM nodes. Use `--device /dev/dri/renderD128` for just the first GPU's render node (least privilege). |
 | `--group-add "$(getent group render \| cut -d: -f3)"` | Joins the container user to the host's `render` group by **GID** (not name) so it works in images where a `render` group with a different GID — or no `render` group at all — exists. Required when nodes are mode 0660/0640. Skip causes `EACCES` on Level Zero init. |
 | `--ipc=host` | vLLM and `torch.distributed` use `/dev/shm` and POSIX semaphores. `--shm-size=16g` is a private-IPC alternative. |
@@ -104,6 +106,12 @@ xpu-smi discovery
   and run `xpu-smi discovery` in the container.
 - `bus error` early in vLLM/PyTorch startup → shared memory too
   small. Use `--ipc=host` or raise `--shm-size`.
+- `the input device is not a TTY` (newer Docker: `cannot attach stdin to a
+  TTY-enabled container because stdin is not a terminal`) → `-it` needs a
+  terminal; CI jobs, agents, and `ssh host cmd` have none. Drop `-it` and pass
+  the command: `docker run --rm ... --entrypoint /bin/bash <image> -c "<cmd>"`.
+  For several steps, keep it alive instead — `docker run -d --name <name> ...
+  --entrypoint sleep <image> infinity` — then `docker exec <name> <cmd>`.
 
 ## Env vars
 

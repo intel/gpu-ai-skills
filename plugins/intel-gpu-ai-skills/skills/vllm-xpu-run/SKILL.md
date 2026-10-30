@@ -51,7 +51,7 @@ general vLLM, CUDA, or Transformers support.
 | `vllm/vllm-openai:latest` | `vllm/vllm-openai-xpu:latest` |
 | `--gpus all` | `--device /dev/dri` + `-v /dev/dri/by-path:/dev/dri/by-path:ro` + `--ipc=host` |
 | `--dtype auto` | `--dtype bfloat16` (explicit) |
-| CUDA graphs default | `--enforce-eager` |
+| CUDA graphs default | graphs also capture by default from vLLM v0.31.0 — emit nothing. Add `--enforce-eager` only for pre-v0.31.0 images. |
 | `--tensor-parallel-size N` | same; pin N XPUs in `ZE_AFFINITY_MASK` |
 
 ## Quickstart (single GPU)
@@ -83,7 +83,6 @@ docker run -d --name vllm-xpu \
     vllm/vllm-openai-xpu:latest \
     Qwen/Qwen2.5-1.5B-Instruct \
         --dtype bfloat16 \
-        --enforce-eager \
         --block-size=64 \
         --max-model-len 4096 \
         --gpu-memory-utilization 0.85
@@ -114,7 +113,7 @@ remote-box workflow), see `references/remote-deploy.md`.
 | Flag | Why |
 |---|---|
 | `--dtype bfloat16` | Battlemage runs bf16 better than fp16; `auto` may pick fp16 from the checkpoint config. Set for unquantized serving only — combining with `--quantization` produces conflicts. |
-| `--enforce-eager` | Conservative default. Graph capture / `torch.compile` on XPU is experimental. After a stable eager run, drop it and re-bench; keep only if TPOT/TTFT improve and content stays correct. |
+| `--enforce-eager` | **Do not emit this on vLLM v0.31.0 or newer.** There, XPU graphs capture by default and `VLLM_XPU_ENABLE_XPU_GRAPH` no longer exists, so the flag disables exactly what the version enables — measured cost roughly 2x decode (TPOT 64 ms vs 36 ms, 4x Arc Pro B70 at concurrency 8). It does not change TTFT, so eager is never the explanation for a slow first token. Emit it only for pre-v0.31.0 images, where graph capture was experimental, or to isolate a suspected graph-capture bug. Check the image first: `docker run --rm --entrypoint python3 <image> -c "import vllm; print(vllm.__version__)"`. |
 | `--block-size=64` | Validated default for the XPU paged-attention path on Battlemage. Bench higher (128, 256) once 64 is correct. |
 | `--gpu-memory-utilization 0.85` | Default 0.92 fails on workstations with active GUI sessions. Drop to 0.70 with browsers open; raise to 0.92 on headless servers. |
 | `-v /dev/dri/by-path:/dev/dri/by-path:ro` | Some oneCCL/device-discovery configurations scan the host's `/dev/dri/by-path` symlinks even for a single-GPU launch. Include this read-only mount to support those configurations; if it is omitted, affected images can abort at engine initialization with `opendir failed: could not open device directory`. |
