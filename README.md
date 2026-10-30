@@ -49,6 +49,7 @@ Format follows the [Agent Skills specification](https://agentskills.io/specifica
 | `xpu-model-type-detect` | Detect a Hugging Face model's actual type (text-gen, VLM, diffusion, encoder, etc.) before loading, so the agent picks the right `AutoModel` class and input kwargs. | "What kind of model is this, and how should I load it?" |
 | `torch-xpu-run` | Run any HF safetensors model via upstream PyTorch + Transformers + `torch.xpu`. CUDA → XPU code translation. | "Run gemma-3 in pure PyTorch on my Intel GPU." |
 | `vllm-xpu-run` | Serve a model with vLLM-XPU's OpenAI-compatible HTTP API. Image picker, flag rationales, multi-GPU patterns. | "Start a vLLM server with Qwen2.5-7B on my Intel GPU." |
+| `vllm-omni-xpu-run` | Serve omni-modality and generative models (Qwen-Omni chat, text-to-image, video, TTS) with vLLM-Omni (`vllm serve --omni`). Image build, per-stage device placement, output-validated smoke tests. | "Serve Qwen2.5-Omni-7B with vLLM-Omni on my Arc Pro B60." |
 | `sglang-xpu-run` | Serve a model with SGLang's XPU backend (`--device xpu --attention-backend intel_xpu`). RadixAttention prefix caching. | "Serve Qwen3 with sglang on my Battlemage GPU." |
 | `llamacpp-xpu-run` | Run a GGUF model via llama.cpp's SYCL backend with an OpenAI-compatible `llama-server`; no Python/PyTorch required. | "Serve this GGUF model locally on my Arc GPU with llama.cpp." |
 

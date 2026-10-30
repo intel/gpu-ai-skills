@@ -18,6 +18,7 @@ run:
   - xpu-model-type-detect
   - torch-xpu-run
   - vllm-xpu-run
+  - vllm-omni-xpu-run
   - sglang-xpu-run
   - llamacpp-xpu-run
 

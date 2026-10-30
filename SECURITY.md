@@ -13,11 +13,12 @@ and are the operator's responsibility, not defects:
 - **The model servers launched by these skills are unauthenticated and reachable
   on every host interface.** None of the emitted launch lines set an API key.
   `sglang-xpu-run` and `llamacpp-xpu-run` pass `--host 0.0.0.0` explicitly;
-  `vllm-xpu-run` publishes the container port with `docker run -p 8000:8000`,
-  which binds all host interfaces by default. This is deliberate — the documented
-  purpose is single-host bring-up and benchmarking on a developer machine or a
-  lab node — but it means anyone who can reach the port can submit inference
-  requests, read the loaded model's identity, and consume the GPU. Publish to
+  `vllm-xpu-run` and `vllm-omni-xpu-run` publish the container port with
+  `docker run -p 8000:8000`, which binds all host interfaces by default. This is
+  deliberate — the documented purpose is single-host bring-up and benchmarking
+  on a developer machine or a lab node — but it means anyone who can reach the
+  port can submit inference requests, read the loaded model's identity, and
+  consume the GPU. Publish to
   `127.0.0.1` instead (`-p 127.0.0.1:8000:8000`, or `--host 127.0.0.1`), put the
   port behind an authenticating reverse proxy, or confine it to a trusted network
   before exposing one of these servers beyond the host that runs it.
