@@ -18,6 +18,7 @@ These skills are:
  - torch-xpu-bench -> "plugins/intel-gpu-ai-skills/skills/torch-xpu-bench/SKILL.md"
  - torch-xpu-profile -> "plugins/intel-gpu-ai-skills/skills/torch-xpu-profile/SKILL.md"
  - torch-xpu-run -> "plugins/intel-gpu-ai-skills/skills/torch-xpu-run/SKILL.md"
+ - vllm-omni-xpu-run -> "plugins/intel-gpu-ai-skills/skills/vllm-omni-xpu-run/SKILL.md"
  - vllm-xpu-bench -> "plugins/intel-gpu-ai-skills/skills/vllm-xpu-bench/SKILL.md"
  - vllm-xpu-profile -> "plugins/intel-gpu-ai-skills/skills/vllm-xpu-profile/SKILL.md"
  - vllm-xpu-run -> "plugins/intel-gpu-ai-skills/skills/vllm-xpu-run/SKILL.md"
@@ -55,6 +56,8 @@ IMPORTANT: When a SKILL.md points at files under its `references/` directory, yo
 - torch-xpu-profile: Profile a Hugging Face model on Intel GPU at the **PyTorch level** with `torch.profiler` and Kineto. Captures CPU + XPU timeline, exports Chrome trace, identifies hottest kernels and async-overlap gaps. Use when the user asks why a model is slow, which op is the bottleneck, or where the GPU is idle. Not for profiling inside a running vLLM server (use vllm-xpu-profile) or for SYCL-kernel-level signal beneath the PyTorch op layer (use xpu-profile-unitrace).
 
 - torch-xpu-run: Run an arbitrary Hugging Face safetensors model on an Intel GPU using **upstream PyTorch** (>= 2.8) with the built-in `torch.xpu` device. Covers loading from the Hub, picking the right dtype, autocast, multi-GPU with accelerate's `device_map`, and the CUDA -> XPU code translation a user has to do once. Use for the Transformers / Accelerate / Diffusers path. Not for OpenAI-compatible serving (use vllm-xpu-run); explicitly not via intel-extension-for-pytorch (ipex) or ipex-llm — those paths are end-of-life and upstream PyTorch supersedes them.
+
+- vllm-omni-xpu-run: Bring up a vLLM-Omni server (`vllm serve --omni`) on Intel Arc / Arc Pro B-series GPUs (XPU) for omni-modality and generative models — Qwen2.5-Omni / Qwen3-Omni chat, text-to-image (Qwen-Image, Z-Image, FLUX), video (Wan) and TTS (Qwen3-TTS). Covers building the image from upstream `docker/Dockerfile.xpu` on the matching `vllm/vllm-openai-xpu` base (no prebuilt XPU image or wheel exists), container flags, per-stage device placement with `--stage-overrides`, single-card layouts, and output-validated smoke tests for chat, image and speech endpoints. Use for any vLLM-Omni request on Intel XPU. Not for text-only LLM serving (use vllm-xpu-run).
 
 - vllm-xpu-bench: Benchmark a **running vLLM-XPU OpenAI-compatible server** on an Intel GPU using `vllm bench`. Measures TTFT (time-to-first-token), TPOT (time-per-output-token), ITL (inter-token latency), end-to-end latency, and throughput under concurrency. Covers online (`vllm bench serve`) and offline (`vllm bench throughput`) modes; concurrency sweeps and quant comparison live in `references/sweep-and-compare.md`. Use after **vllm-xpu-run** when the user asks "how fast is this?".
 

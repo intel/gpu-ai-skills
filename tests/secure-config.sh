@@ -37,6 +37,8 @@ VERBOSE=0
 
 SKILL="plugins/intel-gpu-ai-skills/skills"
 LAUNCH="$SKILL/vllm-xpu-run/scripts/emit_launch.sh"
+OMNI_LAUNCH="$SKILL/vllm-omni-xpu-run/scripts/emit_launch.sh"
+LAUNCHERS=("$LAUNCH" "$OMNI_LAUNCH")
 
 pass=0
 fail=0
@@ -127,14 +129,6 @@ assert_absent "no development/test mode enabled by default" \
 # ---------------------------------------------------------------------------
 printf '\n== TC2: secure defaults, opt-in for less-secure features ==\n'
 
-# The one flag that grants arbitrary code execution must default to off and
-# must not appear in any copy-paste launch invocation.
-if grep -q '^trust_remote_code=0' "$LAUNCH"; then
-    ok "vLLM launcher defaults trust_remote_code=0"
-else
-    err "vLLM launcher no longer defaults trust_remote_code=0"
-fi
-
 # Documenting the flag is how a user learns it exists, so a backticked mention
 # in prose or a knob table is allowed. What must not ship is the flag as a live
 # command-line token anywhere a reader can copy it -- on its own continuation
@@ -142,33 +136,103 @@ fi
 #
 # Matching an *unbackticked* occurrence covers all three and still permits the
 # documented form. The scan spans every tracked text artifact, not just *.md;
-# the two files that implement the opt-in are excluded here and asserted
-# functionally below instead, and evaluation/ must contain the literal string
-# because its assertions and fixtures test for exactly this.
+# the files that implement the opt-in (each launcher in LAUNCHERS, plus the
+# recommender) are excluded here and asserted functionally below instead, and
+# evaluation/ must contain the literal string because its assertions and
+# fixtures test for exactly this.
 TRC_INVOCATION='(^|[^`])--trust-remote-code([^`]|$)'
 assert_absent "no shipped artifact carries --trust-remote-code as a live flag" \
     "$TRC_INVOCATION" \
     '*.md' '*.sh' '*.py' '*.txt' '*.yaml' '*.yml' '*.json' \
     ":!$LAUNCH" \
+    ":!$OMNI_LAUNCH" \
     ":!$SKILL/model-config-recommend/scripts/recommend.py" \
     ':!evaluation/'
 
-# Functional check: the emitted command must not carry the flag unless asked.
-if out=$(bash "$LAUNCH" --model Qwen/Qwen2.5-1.5B-Instruct 2>&1); then
-    if printf '%s' "$out" | grep -q -- '--trust-remote-code'; then
-        err "emit_launch.sh emits --trust-remote-code without being asked"
+# Every launcher excluded from the text scan above is held to the rule
+# functionally instead, so the exclusion cannot become a blind spot: the flag
+# that grants arbitrary code execution must default to off, must not be emitted
+# unless asked, and must still be emitted when it is asked for (otherwise the
+# "omits" check passes vacuously).
+for launcher in "${LAUNCHERS[@]}"; do
+    launcher_name=${launcher#"$SKILL/"}
+
+    # The Omni launcher refuses to emit a launch with no remote-code decision
+    # (its bundled deploy YAMLs enable it, so an absent flag is not an
+    # opt-out). Give it the "no" decision so the not-asked probe below has a
+    # command to inspect; the vLLM launcher has no such gate and needs none.
+    # The stage id goes with it because declining is only enforceable on named
+    # stages, and this model's pipeline is not one the launcher knows.
+    decline=()
+    [ "$launcher" = "$OMNI_LAUNCH" ] &&
+        decline=(--no-remote-code --stage-overrides '{"0":{}}')
+
+    if grep -q '^trust_remote_code=0' "$launcher"; then
+        ok "$launcher_name defaults trust_remote_code=0"
     else
-        ok "emit_launch.sh omits --trust-remote-code by default"
+        err "$launcher_name no longer defaults trust_remote_code=0"
     fi
-    # Positive control: the opt-in must still work, or the check above is vacuous.
-    if bash "$LAUNCH" --model Qwen/Qwen2.5-1.5B-Instruct --trust-remote-code 2>&1 |
-            grep -q -- '--trust-remote-code'; then
-        ok "emit_launch.sh honors the --trust-remote-code opt-in"
+
+    if out=$(bash "$launcher" --model Qwen/Qwen2.5-1.5B-Instruct "${decline[@]}" 2>&1); then
+        if printf '%s' "$out" | grep -q -- '--trust-remote-code'; then
+            err "$launcher_name emits --trust-remote-code without being asked"
+        else
+            ok "$launcher_name omits --trust-remote-code by default"
+        fi
+
+        if bash "$launcher" \
+                --model Qwen/Qwen2.5-1.5B-Instruct \
+                --trust-remote-code 2>&1 |
+                grep -q -- '--trust-remote-code'; then
+            ok "$launcher_name honors the --trust-remote-code opt-in"
+        else
+            err "$launcher_name ignores the --trust-remote-code opt-in"
+        fi
     else
-        err "emit_launch.sh ignores the --trust-remote-code opt-in"
+        err "$launcher_name failed to run: $out"
+    fi
+done
+
+# The Omni launcher is also held to the RESOLVED configuration, not only to its
+# own flag. vLLM-Omni's bundled deploy YAMLs enable trust_remote_code per stage
+# for most models, and the serve CLI maps an absent --trust-remote-code to
+# "not specified", so the YAML value stays in force: for those models the
+# flag's absence is not an opt-out. The launcher must therefore refuse to emit
+# such a launch until the caller decides, and its opt-out must land as
+# per-stage overrides, which is the only form that beats the YAML.
+omni_model=Qwen/Qwen2.5-Omni-7B
+if bash "$OMNI_LAUNCH" --model "$omni_model" >/dev/null 2>&1; then
+    err "omni launcher emits a $omni_model launch with no remote-code decision (its YAML enables it)"
+else
+    ok "omni launcher requires a remote-code decision for $omni_model"
+fi
+if out=$(bash "$OMNI_LAUNCH" --model "$omni_model" --no-remote-code 2>/dev/null); then
+    n=$(printf '%s' "$out" | grep -o '"trust_remote_code":false' | wc -l)
+    if [ "$n" -eq 3 ]; then
+        ok "omni launcher --no-remote-code disables trust_remote_code on all 3 $omni_model stages"
+    else
+        err "omni launcher --no-remote-code disables trust_remote_code on $n of 3 $omni_model stages"
     fi
 else
-    err "emit_launch.sh failed to run: $out"
+    err "omni launcher --no-remote-code failed for $omni_model"
+fi
+# Declining is only worth anything if it is enforced. For a model whose stage
+# layout the launcher does not know there is no stage to set the value on, so
+# it must refuse rather than emit a launch the flag does not actually cover.
+if bash "$OMNI_LAUNCH" --model some/unknown-omni-model --no-remote-code >/dev/null 2>&1; then
+    err "omni launcher emits an unenforced --no-remote-code launch for an unknown stage layout"
+else
+    ok "omni launcher refuses a --no-remote-code it cannot enforce"
+fi
+if bash "$OMNI_LAUNCH" --model "$omni_model" --trust-remote-code >/dev/null 2>&1; then
+    ok "omni launcher accepts the explicit acknowledgement for $omni_model"
+else
+    err "omni launcher rejects the explicit --trust-remote-code acknowledgement for $omni_model"
+fi
+if bash "$OMNI_LAUNCH" --model "$omni_model" --trust-remote-code --no-remote-code >/dev/null 2>&1; then
+    err "omni launcher accepts --trust-remote-code together with --no-remote-code"
+else
+    ok "omni launcher rejects --trust-remote-code together with --no-remote-code"
 fi
 
 # The recommender used to add --trust-remote-code whenever the *model's own*
