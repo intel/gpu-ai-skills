@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="520" viewBox="0 0 560 520" role="img" aria-labelledby="t d" font-family="'Segoe UI',-apple-system,Helvetica,Arial,sans-serif">
+<title id="t">How to use Intel GPU AI Skills</title><desc id="d">Bring an Intel dGPU instance, Ubuntu Linux and an AI assistant, then ask in plain English. Five steps: get ready, check the fit, run, measure, find slowdowns. If you are coming from NVIDIA CUDA, two skills move your project over.</desc>
+<rect x="1" y="1" width="558" height="518" rx="18" fill="#0071C5"/><rect x="1.75" y="1.75" width="556.5" height="516.5" rx="17.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/><rect x="3.25" y="3.25" width="553.5" height="513.5" rx="15.75" fill="none" stroke="#FFFFFF" stroke-width="1.5"/><rect x="4.75" y="4.75" width="550.5" height="510.5" rx="14.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/>
+<rect x="16" y="16" width="528" height="100" rx="12" fill="#4A2C94"/><rect x="16.75" y="16.75" width="526.5" height="98.5" rx="11.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/><rect x="18.25" y="18.25" width="523.5" height="95.5" rx="9.75" fill="none" stroke="#FFFFFF" stroke-width="1.5"/><rect x="19.75" y="19.75" width="520.5" height="92.5" rx="8.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/>
+<text x="34" y="42" font-size="14" font-weight="700" fill="#FFFFFF" letter-spacing="1">YOU BRING</text>
+<text x="34" y="70" font-size="20" font-weight="700" fill="#FFFFFF">An Intel dGPU instance</text>
+<text x="34" y="98" font-size="20" font-weight="700" fill="#FFFFFF">Ubuntu Linux  <tspan fill="#FFFFFF" font-weight="400">and</tspan>  an AI assistant</text>
+<text x="280" y="148" text-anchor="middle" font-size="16" fill="#FFFFFF">Then ask in plain English, one step at a time</text>
+<line x1="44" y1="204" x2="44" y2="224" stroke="#E6DDFB" stroke-width="3" stroke-linecap="round"/>
+<rect x="16" y="164" width="528" height="48" rx="10" fill="#005594"/><rect x="16.75" y="164.75" width="526.5" height="46.5" rx="9.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/><rect x="18.25" y="166.25" width="523.5" height="43.5" rx="7.75" fill="none" stroke="#FFFFFF" stroke-width="1.5"/><rect x="19.75" y="167.75" width="520.5" height="40.5" rx="6.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/>
+<circle cx="44" cy="188" r="16" fill="#FFFFFF"/><text x="44" y="194" text-anchor="middle" font-size="18" font-weight="700" fill="#6B3FD6">1</text>
+<text x="72" y="194" font-size="18" font-weight="700" fill="#FFFFFF">Get ready</text>
+<text x="226" y="194" font-size="15" fill="#FFFFFF">Set up your instance and check the GPU</text>
+<line x1="44" y1="260" x2="44" y2="280" stroke="#E6DDFB" stroke-width="3" stroke-linecap="round"/>
+<rect x="16" y="220" width="528" height="48" rx="10" fill="#005594"/><rect x="16.75" y="220.75" width="526.5" height="46.5" rx="9.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/><rect x="18.25" y="222.25" width="523.5" height="43.5" rx="7.75" fill="none" stroke="#FFFFFF" stroke-width="1.5"/><rect x="19.75" y="223.75" width="520.5" height="40.5" rx="6.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/>
+<circle cx="44" cy="244" r="16" fill="#FFFFFF"/><text x="44" y="250" text-anchor="middle" font-size="18" font-weight="700" fill="#6B3FD6">2</text>
+<text x="72" y="250" font-size="18" font-weight="700" fill="#FFFFFF">Check the fit</text>
+<text x="226" y="250" font-size="15" fill="#FFFFFF">See if a model fits your GPU</text>
+<line x1="44" y1="316" x2="44" y2="336" stroke="#E6DDFB" stroke-width="3" stroke-linecap="round"/>
+<rect x="16" y="276" width="528" height="48" rx="10" fill="#005594"/><rect x="16.75" y="276.75" width="526.5" height="46.5" rx="9.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/><rect x="18.25" y="278.25" width="523.5" height="43.5" rx="7.75" fill="none" stroke="#FFFFFF" stroke-width="1.5"/><rect x="19.75" y="279.75" width="520.5" height="40.5" rx="6.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/>
+<circle cx="44" cy="300" r="16" fill="#FFFFFF"/><text x="44" y="306" text-anchor="middle" font-size="18" font-weight="700" fill="#6B3FD6">3</text>
+<text x="72" y="306" font-size="18" font-weight="700" fill="#FFFFFF">Run</text>
+<text x="226" y="306" font-size="15" fill="#FFFFFF">Start an AI model on your GPU</text>
+<line x1="44" y1="372" x2="44" y2="392" stroke="#E6DDFB" stroke-width="3" stroke-linecap="round"/>
+<rect x="16" y="332" width="528" height="48" rx="10" fill="#005594"/><rect x="16.75" y="332.75" width="526.5" height="46.5" rx="9.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/><rect x="18.25" y="334.25" width="523.5" height="43.5" rx="7.75" fill="none" stroke="#FFFFFF" stroke-width="1.5"/><rect x="19.75" y="335.75" width="520.5" height="40.5" rx="6.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/>
+<circle cx="44" cy="356" r="16" fill="#FFFFFF"/><text x="44" y="362" text-anchor="middle" font-size="18" font-weight="700" fill="#6B3FD6">4</text>
+<text x="72" y="362" font-size="18" font-weight="700" fill="#FFFFFF">Measure</text>
+<text x="226" y="362" font-size="15" fill="#FFFFFF">See how fast it answers</text>
+<rect x="16" y="388" width="528" height="48" rx="10" fill="#005594"/><rect x="16.75" y="388.75" width="526.5" height="46.5" rx="9.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/><rect x="18.25" y="390.25" width="523.5" height="43.5" rx="7.75" fill="none" stroke="#FFFFFF" stroke-width="1.5"/><rect x="19.75" y="391.75" width="520.5" height="40.5" rx="6.25" fill="none" stroke="#DCD0FA" stroke-width="1.5"/>
+<circle cx="44" cy="412" r="16" fill="#FFFFFF"/><text x="44" y="418" text-anchor="middle" font-size="18" font-weight="700" fill="#6B3FD6">5</text>
+<text x="72" y="418" font-size="18" font-weight="700" fill="#FFFFFF">Find slowdowns</text>
+<text x="226" y="418" font-size="15" fill="#FFFFFF">Spot what holds it back</text>
+<rect x="16" y="452" width="528" height="64" rx="12" fill="#D9ECFA" stroke="#001C38" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="34" y="478" font-size="16" font-weight="700" fill="#00284A">Coming from NVIDIA CUDA?</text>
+<text x="34" y="500" font-size="15" fill="#00284A">Two skills move your project over.</text>
+</svg>
