@@ -75,7 +75,7 @@ Format follows the [Agent Skills specification](https://agentskills.io/specifica
 | Skill | Useful for | Example prompt |
 |-------|------------|----------------|
 | `cuda-to-xpu-migration` | Assess a CUDA-based AI repo, notebook, container, or launch script; report blockers and recommend Intel GPU/XPU skills. Assessment only; does not rewrite code. | "Assess this CUDA training repo for Intel XPU and produce a migration plan." |
-| `xpu-port` | Port PyTorch Python code from CUDA to Intel GPU using `torch.xpu`: scan, rewrite, and check numerical correctness against CPU FP64. Targets XPU only. | "Port the PyTorch Python code in ./my-model from CUDA to XPU now." |
+| `xpu-port` | Port PyTorch Python code from CUDA to Intel GPU using `torch.xpu`: scan, rewrite, and check numerical correctness against CPU FP64. Optional generic availability checks; still targets XPU only. | "Port the PyTorch Python code in ./my-model from CUDA to XPU now." |
 
 These skills do not translate CUDA C++ kernels to SYCL. CUDA-native components are flagged for replacement or redesign.
 

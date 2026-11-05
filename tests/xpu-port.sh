@@ -54,9 +54,10 @@ printf '\n== Section 1: rewrite checks ==\n'
 
 run_rewrite() {
     local name="$1" transform="$2" input="$3" expected="$4"
+    shift 4
     local f="$tmp/$name.py"
     printf '%s' "$input" > "$f"
-    "$PY" "$SKILL/xpu_port_rewrite.py" --transform "$transform" --path "$f" \
+    "$PY" "$SKILL/xpu_port_rewrite.py" --transform "$transform" --path "$f" "$@" \
         >/dev/null 2>&1
     if [ "$(cat "$f")" = "$expected" ]; then
         ok "$name"
@@ -82,6 +83,68 @@ torch.cuda.synchronize()" \
 "import torch
 torch.xpu.set_device(0)
 torch.xpu.synchronize()"
+
+run_rewrite availability_default cuda_to_xpu \
+"available = torch.cuda.is_available()
+probe = torch.cuda.is_available" \
+"available = torch.xpu.is_available()
+probe = torch.xpu.is_available"
+
+run_rewrite availability_generic cuda_to_xpu \
+"available = torch.cuda.is_available()
+probe = torch.cuda.is_available
+xpu_ready = torch.xpu.is_available()
+torch.cuda.synchronize()" \
+"available = torch.accelerator.is_available()
+probe = torch.accelerator.is_available
+xpu_ready = torch.xpu.is_available()
+torch.xpu.synchronize()" --availability-api accelerator
+
+# Exercise the generated references with distinct backend results. Generic
+# availability must not silently become an XPU-specific check (or vice versa).
+if "$PY" - "$tmp/availability_default.py" "$tmp/availability_generic.py" <<'PY'
+import sys
+from types import SimpleNamespace
+
+for generic_ready, xpu_ready in [(False, False), (True, False), (False, True), (True, True)]:
+    torch = SimpleNamespace(
+        accelerator=SimpleNamespace(is_available=lambda: generic_ready),
+        xpu=SimpleNamespace(is_available=lambda: xpu_ready, synchronize=lambda: None),
+    )
+    for path, expected in [(sys.argv[1], xpu_ready), (sys.argv[2], generic_ready)]:
+        namespace = {"torch": torch}
+        exec(compile(open(path).read(), path, "exec"), namespace)
+        assert namespace["available"] == expected
+        assert namespace["probe"]() == expected
+        if path == sys.argv[2]:
+            assert namespace["xpu_ready"] == xpu_ready
+PY
+then
+    ok "availability choices use the selected backend and preserve XPU guards"
+else
+    err "availability choices or XPU guards have incorrect runtime behaviour"
+fi
+
+preview="$tmp/availability_preview.py"
+printf 'available = torch.cuda.is_available()\n' > "$preview"
+cp "$preview" "$tmp/availability_preview.before"
+if "$PY" "$SKILL/xpu_port_rewrite.py" --transform cuda_to_xpu \
+    --availability-api accelerator --path "$preview" --check > "$tmp/availability.diff" 2>/dev/null \
+    && diff -q "$preview" "$tmp/availability_preview.before" >/dev/null \
+    && grep -q '^+available = torch.accelerator.is_available()' "$tmp/availability.diff"; then
+    ok "generic availability preview shows the change without writing"
+else
+    err "generic availability preview failed or modified the input"
+fi
+
+if "$PY" "$SKILL/xpu_port_rewrite.py" --transform imports \
+    --availability-api accelerator --path "$preview" >/dev/null 2>&1; then
+    err "generic availability option accepted an unrelated transform"
+elif diff -q "$preview" "$tmp/availability_preview.before" >/dev/null; then
+    ok "generic availability option rejects unrelated transforms without writing"
+else
+    err "invalid generic availability invocation modified the input"
+fi
 
 run_rewrite dist_backend_kwarg dist_backend \
 'dist.init_process_group(backend="nccl", rank=0)' \
@@ -128,9 +191,10 @@ printf '\n== Section 2: rewrite negatives (no change expected) ==\n'
 
 run_negative() {
     local name="$1" transform="$2" input="$3"
+    shift 3
     local f="$tmp/neg_$name.py"
     printf '%s' "$input" > "$f"
-    "$PY" "$SKILL/xpu_port_rewrite.py" --transform "$transform" --path "$f" \
+    "$PY" "$SKILL/xpu_port_rewrite.py" --transform "$transform" --path "$f" "$@" \
         >/dev/null 2>&1
     if [ "$(cat "$f")" = "$input" ]; then
         ok "$name"
@@ -139,6 +203,20 @@ run_negative() {
         diff -u <(printf '%s' "$input") "$f" | sed 's/^/      /' | head -10
     fi
 }
+
+run_negative availability_existing_generic cuda_to_xpu \
+"available = torch.accelerator.is_available()
+torch.accelerator.synchronize()" --availability-api accelerator
+
+run_negative availability_generic_idempotent cuda_to_xpu \
+"available = torch.accelerator.is_available()
+probe = torch.accelerator.is_available
+xpu_ready = torch.xpu.is_available()
+torch.xpu.synchronize()" --availability-api accelerator
+
+run_negative availability_import_binding cuda_to_xpu \
+"from torch.cuda import is_available as ready
+available = ready()" --availability-api accelerator
 
 # bug-1 lock-in: device_type == 'cuda' must NOT be flipped
 run_negative device_type_compare device_string \
@@ -292,6 +370,8 @@ def go(x):
     return x, scaler
 PY
 
+cp "$e2e" "$tmp/e2e_generic.py"
+
 # initial scan: there should be mechanical findings to handle
 initial=$("$PY" "$SKILL/xpu_port_scan.py" "$e2e" \
     | "$PY" -c "import json,sys; print(json.load(sys.stdin)['by_bucket'].get('mechanical', 0))")
@@ -325,6 +405,25 @@ if [ "$remaining" = "0" ]; then
     ok "final scan mechanical bucket is empty"
 else
     err "final scan still has $remaining mechanical findings"
+fi
+
+# The optional route must compose with the same full mechanical pass and scan.
+for t in device_string cuda_to_xpu dot_cuda imports dist_backend amp_autocast amp_gradscaler; do
+    availability_args=()
+    [ "$t" = cuda_to_xpu ] && availability_args=(--availability-api accelerator)
+    "$PY" "$SKILL/xpu_port_rewrite.py" --transform "$t" --path "$tmp/e2e_generic.py" \
+        "${availability_args[@]}" >/dev/null 2>&1
+done
+sed 's/torch.xpu.is_available()/torch.accelerator.is_available()/' \
+    "$e2e_target" > "$tmp/e2e_generic_target.py"
+generic_remaining=$("$PY" "$SKILL/xpu_port_scan.py" "$tmp/e2e_generic.py" \
+    | "$PY" -c "import json,sys; print(json.load(sys.stdin)['total_findings'])")
+if diff -q "$tmp/e2e_generic_target.py" "$tmp/e2e_generic.py" >/dev/null \
+    && [ "$generic_remaining" = 0 ]; then
+    ok "generic availability composes with all transforms and leaves an empty scan"
+else
+    err "generic availability full pass or final scan failed"
+    diff -u "$tmp/e2e_generic_target.py" "$tmp/e2e_generic.py" | head -40
 fi
 
 # idempotency: running all transforms a second time must produce no further changes

@@ -1,6 +1,6 @@
 ---
 name: xpu-port
-description: Execute a single-target CUDA-to-XPU port of a PyTorch repo with libcst-based scan, mechanical rewrite, and CPU FP64 vs target-dtype correctness verify on one forward pass. Use when the request says "port" — "port my repo to XPU", "port my repo at <path> to XPU", "rewrite the CUDA calls to XPU", "apply the mechanical transforms", "run the scan and rewrite", "make the port changes now". Not for the "migrate" verb ("migrate my repo", "migrate this repo to XPU") or a bare whole-repo workflow request where scope is not yet set — those start with cuda-to-xpu-migration, whose plan routes here. Not for assessment-only, throughput (torch-xpu-bench), op-level slowness (torch-xpu-profile), custom CUDA C++ extensions, or dual-target CUDA+XPU codebases.
+description: Execute a single-target CUDA-to-XPU port of a PyTorch Python repo with libcst-based scan, mechanical rewrite, optional generic availability checks, and CPU FP64 vs target-dtype correctness verify on one forward pass. Use when the request says "port" — "port my repo to XPU", "port my repo at ./my-model to XPU", "rewrite the CUDA calls to XPU", "apply the mechanical transforms", "run the scan and rewrite", "make the port changes now". Not for the "migrate" verb ("migrate my repo", "migrate this repo to XPU") or a bare whole-repo workflow request where scope is not yet set — those start with cuda-to-xpu-migration, whose plan routes here. Not for assessment-only, throughput (torch-xpu-bench), op-level slowness (torch-xpu-profile), custom CUDA C++ extensions, or dual-target CUDA+XPU codebases.
 ---
 
 # xpu-port
@@ -108,6 +108,13 @@ done
 `references/cuda_to_xpu_whitelist.md` before running the mechanical
 pass to understand what `cuda_to_xpu` rewrites and why CUDA-only
 attrs are flagged instead.
+
+Availability defaults to `torch.xpu.is_available()`. To request
+`torch.accelerator.is_available()` instead, read the availability
+guidance in `references/semantic-patterns.md`, then add
+`--availability-api accelerator` to the `cuda_to_xpu` invocation.
+Existing generic checks stay unchanged. This option covers qualified
+availability references only; the port and verifier still target XPU.
 
 ### 3. Re-scan (gate)
 
