@@ -70,12 +70,14 @@ Format follows the [Agent Skills specification](https://agentskills.io/specifica
 | `xpu-profile-unitrace` | SYCL / Level Zero kernel-level profiling with `unitrace` (PTI-GPU; built from source). Per-kernel timing, oneCCL events, HW counters. | "Show me the actual SYCL kernel names taking the time." |
 | `enable-xpu-monitoring` | Deploy Prometheus + Grafana + XPU Manager monitoring with Docker Compose from [intel/xe-full-stack-monitoring](https://github.com/intel/xe-full-stack-monitoring). GPU metrics, vLLM inference metrics (ports 8000–8008 by default), system resources. | "Set up monitoring for my Intel GPU host so I can see utilization and vLLM latency." |
 
-### Migrate — bring an existing CUDA project over
+### Migrate — assess AI projects and port PyTorch code
 
 | Skill | Useful for | Example prompt |
 |-------|------------|----------------|
-| `cuda-to-xpu-migration` | Assess a CUDA repo, notebook, Dockerfile, or launch script; produce a migration report and route to the right XPU skills. Plans and routes only. | "Migrate this CUDA training repo to Intel XPU." |
-| `xpu-port` | Execute a single-target CUDA → XPU port: libcst-based scan, mechanical rewrite, and CPU FP64 vs. target-dtype correctness verification. | "Port my repo at ./my-model to XPU now." |
+| `cuda-to-xpu-migration` | Assess a CUDA-based AI repo, notebook, container, or launch script; report blockers and recommend Intel GPU/XPU skills. Assessment only; does not rewrite code. | "Assess this CUDA training repo for Intel XPU and produce a migration plan." |
+| `xpu-port` | Port PyTorch Python code from CUDA to Intel GPU using `torch.xpu`: scan, rewrite, and check numerical correctness against CPU FP64. Optional generic availability checks; still targets XPU only. | "Port the PyTorch Python code in ./my-model from CUDA to XPU now." |
+
+These skills do not translate CUDA C++ kernels to SYCL. CUDA-native components are flagged for replacement or redesign.
 
 The descriptions are designed to disambiguate by *deployment shape*: "benchmark X" alone is intentionally ambiguous (which framework?), so a good agent will ask whether you mean PyTorch / vLLM / sglang before picking. If you want to be explicit, mention the skill by name: *"Use the **vllm-xpu-bench** skill to ..."*.
 

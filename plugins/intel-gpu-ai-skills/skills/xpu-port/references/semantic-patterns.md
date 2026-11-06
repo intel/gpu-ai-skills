@@ -45,9 +45,19 @@ so the flipped gate enables the fused path correctly.
 
 ## `torch.cuda.is_available()` checks
 
-Single-target XPU port: these are rewritten by `cuda_to_xpu` to
-`torch.xpu.is_available()`. Do not hand-edit them back. If
-dual-target is needed, this skill is the wrong tool.
+`cuda_to_xpu` defaults to `torch.xpu.is_available()`. With
+`--availability-api accelerator`, qualified `torch.cuda.is_available`
+references use `torch.accelerator.is_available` instead. Other APIs
+still use XPU; imported or aliased helpers need binding review.
+
+The generic check tests the current accelerator, which may be CUDA,
+MPS, or another backend. Keep XPU-specific guards for branches that
+select an XPU device. Before using generic checks on the target, confirm
+`torch.accelerator.current_accelerator() == torch.device("xpu")`.
+The XPU verifier remains required; generic availability does not prove
+XPU availability or make the whole port portable.
+
+API contract: [PyTorch 2.8 accelerator source](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/accelerator/__init__.py).
 
 ## Hard-coded CUDA-only library imports
 

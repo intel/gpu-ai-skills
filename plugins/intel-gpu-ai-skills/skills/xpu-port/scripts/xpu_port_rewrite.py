@@ -9,7 +9,8 @@ without writing.
 
 Transforms:
   device_string   'cuda' / 'cuda:N' / f"cuda:{i}" -> 'xpu' / 'xpu:N' / f"xpu:{i}"
-  cuda_to_xpu     torch.cuda.X -> torch.xpu.X for X in the safe whitelist
+  cuda_to_xpu     torch.cuda.X -> torch.xpu.X for X in the safe whitelist;
+                  --availability-api accelerator selects torch.accelerator.is_available
   dot_cuda        x.cuda() / x.cuda(0) -> x.xpu() / x.xpu(0)  (method, not torch.cuda)
   imports         `import torch.cuda` / `from torch.cuda import ...` -> torch.xpu
   dist_backend    init_process_group(backend="nccl") -> backend="xccl"
@@ -231,6 +232,9 @@ class DeviceStringTransform(cst.CSTTransformer):
 # cuda_to_xpu
 # ---------------------------------------------------------------------------
 class CudaToXpuTransform(cst.CSTTransformer):
+    def __init__(self, availability_api: str = "xpu") -> None:
+        self.availability_api = availability_api
+
     def leave_Attribute(
         self, _: cst.Attribute, updated: cst.Attribute
     ) -> cst.Attribute:
@@ -248,10 +252,11 @@ class CudaToXpuTransform(cst.CSTTransformer):
             return updated
         if attr not in XPU_TOP_LEVEL:
             return updated
-        # rewrite torch.cuda -> torch.xpu
+        # Only availability has an opt-in generic route; other APIs stay XPU.
+        target = self.availability_api if attr == "is_available" else "xpu"
         return updated.with_changes(
             value=updated.value.with_changes(
-                attr=cst.Name("xpu"),
+                attr=cst.Name(target),
             )
         )
 
@@ -513,7 +518,7 @@ TRANSFORMS = {
 
 
 def rewrite_file(
-    path: Path, transform_cls: type
+    path: Path, transform_cls: type, availability_api: str = "xpu"
 ) -> tuple[bool, str, str] | None:
     """Return (changed, before, after), or None if the file cannot be read
     or parsed."""
@@ -542,14 +547,19 @@ def rewrite_file(
         # trip), so comparing to `source` reports a change the transform did
         # not make and writes the file back over an edit nobody asked for.
         baseline = tree.code
+        transform = (
+            transform_cls(availability_api=availability_api)
+            if transform_cls is CudaToXpuTransform
+            else transform_cls()
+        )
         needs_metadata = bool(
             getattr(transform_cls, "METADATA_DEPENDENCIES", ())
         )
         if needs_metadata:
             wrapper = cst.MetadataWrapper(tree)
-            new_tree = wrapper.visit(transform_cls())
+            new_tree = wrapper.visit(transform)
         else:
-            new_tree = tree.visit(transform_cls())
+            new_tree = tree.visit(transform)
         new = new_tree.code
     except PARSE_ERRORS as exc:
         print(f"rewrite: skip {path}: parse error: {exc}", file=sys.stderr)
@@ -585,11 +595,20 @@ def main(argv: list[str]) -> int:
         help="print unified diff to stdout, do not write",
     )
     ap.add_argument(
+        "--availability-api",
+        choices=["xpu", "accelerator"],
+        default="xpu",
+        help="cuda_to_xpu only: API for qualified is_available references "
+        "(default: xpu; accelerator checks the current backend, not XPU specifically)",
+    )
+    ap.add_argument(
         "--exclude",
         action="append",
         default=[".git", ".venv", "venv", "__pycache__", "build", "dist"],
     )
     args = ap.parse_args(argv)
+    if args.availability_api != "xpu" and args.transform != "cuda_to_xpu":
+        ap.error("--availability-api accelerator requires --transform cuda_to_xpu")
 
     if not args.path.exists():
         print(f"path does not exist: {args.path}", file=sys.stderr)
@@ -604,7 +623,7 @@ def main(argv: list[str]) -> int:
     changed_files = 0
     skipped_files = 0
     for f in files:
-        result = rewrite_file(f, transform_cls)
+        result = rewrite_file(f, transform_cls, args.availability_api)
         if result is None:
             skipped_files += 1
             continue
