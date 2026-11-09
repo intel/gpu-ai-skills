@@ -221,16 +221,14 @@ Waterman, Patterson, *Communications of the ACM* 52(4), 2008.
 | Card | PCI device ID | Die | VRAM | Bandwidth | FP16/BF16 | INT8 |
 |---|---|---|---|---|---|---|
 | Arc B580 | `0xe20b` | BMG-G21 | 12 GB | 456 GB/s | 26.9 TF | 233 TOPS |
-| Arc Pro B50 | `0xe220` ¹ | BMG-G21 (LP) | 16 GB | 224 GB/s | 21.30 TF | 170 TOPS |
-| Arc Pro B60 | `0xe211` ¹ | BMG-G21 | 24 GB | 456 GB/s | 24.56 TF | 197 TOPS |
-| Arc Pro B65 | `0xe221` ¹ | BMG-G31 (cut) | 32 GB | 608 GB/s | 24.56 TF | 197 TOPS |
+| Arc Pro B50 | `0xe212` | BMG-G21 (LP) | 16 GB | 224 GB/s | 21.30 TF | 170 TOPS |
+| Arc Pro B60 | `0xe211` | BMG-G21 | 24 GB | 456 GB/s | 24.56 TF | 197 TOPS |
+| Arc Pro B65 | `0xe222` | BMG-G31 (cut) | 32 GB | 608 GB/s | 24.56 TF | 197 TOPS |
 | Arc Pro B70 | `0xe223` | BMG-G31 (full) | 32 GB | 608 GB/s | 45.88 TF | 367 TOPS |
 
-¹ Provisional — derived from the xe kernel driver's `INTEL_BMG_IDS`
-list; not yet verified by `lspci` on physical hardware.
-
-Each row in the JSON cites Intel's SKU spec page directly. The PCI
-device ID is what `xpu-smi discovery` and `lspci -d 8086:` show in
+Each row in the JSON cites Intel's SKU spec page directly, and every
+PCI device ID matches both that page and the pci.ids database. The
+PCI device ID is what `xpu-smi discovery` and `lspci -d 8086:` show in
 brackets (e.g. `Intel(R) Graphics [0xe223]`).
 
 ## Worked example

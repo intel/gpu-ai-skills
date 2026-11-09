@@ -1,5 +1,5 @@
 {
-  "_comment": "Intel Arc B-series specs from published Intel sources. Each row cites the SKU spec page or Intel datasheet. FP16 and BF16 share the same XMX throughput tier on Xe2; we list the value once. INT4 is not separately published by Intel — for W4A8 paths, use the INT8 number (the activation side governs throughput). Die note: B70 uses BMG-G31 (full die, 32 Xe cores, 256-bit bus). B580 and B60 use BMG-G21 (smaller die, 20 Xe cores, 192-bit bus). Compute and bandwidth scale with die. pci_device_id: the value shown in brackets by `xpu-smi discovery` / `lspci -d 8086:` (e.g. `Intel(R) Graphics [0xe223]` → arc-pro-b70). Source: lspci on the hardware for B580 and B70; remaining IDs derived from Linux xe kernel driver (include/drm/intel/pciids.h INTEL_BMG_IDS list).",
+  "_comment": "Intel Arc B-series specs from published Intel sources. Each row cites the SKU spec page or Intel datasheet. FP16 and BF16 share the same XMX throughput tier on Xe2; we list the value once. INT4 is not separately published by Intel — for W4A8 paths, use the INT8 number (the activation side governs throughput). Die note: B70 uses BMG-G31 (full die, 32 Xe cores, 256-bit bus). B580 and B60 use BMG-G21 (smaller die, 20 Xe cores, 192-bit bus). Compute and bandwidth scale with die. pci_device_id: the value shown in brackets by `xpu-smi discovery` / `lspci -d 8086:` (e.g. `Intel(R) Graphics [0xe223]` → arc-pro-b70). Source: each SKU's Intel spec page (PCI device ID field), matching the pci.ids database names (Battlemage G21 [Arc Pro B50] 0xe212, Battlemage G31 [Arc Pro B65] 0xe222); B580, B60 and B70 also confirmed by lspci on the hardware.",
   "devices": [
     {
       "id": "arc-b580",
@@ -21,7 +21,7 @@
     {
       "id": "arc-pro-b50",
       "name": "Arc Pro B50",
-      "pci_device_id": "0xe220",
+      "pci_device_id": "0xe212",
       "category": "workstation",
       "die": "BMG-G21 (low-power bin)",
       "arch": "Xe2 (Battlemage)",
@@ -55,7 +55,7 @@
     {
       "id": "arc-pro-b65",
       "name": "Arc Pro B65",
-      "pci_device_id": "0xe221",
+      "pci_device_id": "0xe222",
       "category": "workstation",
       "die": "BMG-G31 (compute-binned, full memory bus)",
       "arch": "Xe2 (Battlemage)",
