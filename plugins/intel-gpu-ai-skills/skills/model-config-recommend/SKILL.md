@@ -228,13 +228,38 @@ Waterman, Patterson, *Communications of the ACM* 52(4), 2008.
 
 ## Hardware coverage (`data/hardware.json`)
 
-| Card | PCI device ID | Die | VRAM | Bandwidth | FP16/BF16 | INT8 |
-|---|---|---|---|---|---|---|
-| Arc B580 | `0xe20b` | BMG-G21 | 12 GB | 456 GB/s | 29.18 TF | 233 TOPS |
-| Arc Pro B50 | `0xe212` | BMG-G21 (LP) | 16 GB | 224 GB/s | 21.30 TF | 170 TOPS |
-| Arc Pro B60 | `0xe211` | BMG-G21 | 24 GB | 456 GB/s | 24.56 TF | 197 TOPS |
-| Arc Pro B65 | `0xe222` | BMG-G31 (cut) | 32 GB | 608 GB/s | 24.56 TF | 197 TOPS |
-| Arc Pro B70 | `0xe223` | BMG-G31 (full) | 32 GB | 608 GB/s | 45.88 TF | 367 TOPS |
+| Card | PCI device ID | Die | VRAM | Bus | Bandwidth | XVE / XMX engines | Peak clock |
+|---|---|---|---|---|---|---|---|
+| Arc B580 | `0xe20b` | BMG-G21 | 12 GB | 192-bit | 456 GB/s | 160 / 160 | 2850 MHz |
+| Arc Pro B50 | `0xe212` | BMG-G21 (LP) | 16 GB | 128-bit | 224 GB/s | 128 / 128 | 2600 MHz |
+| Arc Pro B60 | `0xe211` | BMG-G21 | 24 GB | 192-bit | 456 GB/s | 160 / 160 | 2400 MHz |
+| Arc Pro B65 | `0xe222` | BMG-G31 (cut) | 32 GB | 256-bit | 608 GB/s | 160 / 160 | 2400 MHz |
+| Arc Pro B70 | `0xe223` | BMG-G31 (full) | 32 GB | 256-bit | 608 GB/s | 256 / 256 | 2800 MHz |
+
+The JSON stores unit counts, clocks and per-unit rates, not peak
+totals. Each peak is `units × ops_per_clk × peak_clock`, with Xe2
+rates per vector engine (XVE) of 32 FP32 and 64 FP16 FLOP/clk, and per
+XMX engine of 256 BF16 FLOP/clk and 512 INT8 ops/clk:
+
+| Card | FP32 vector | FP16 vector | BF16 XMX | INT8 XMX |
+|---|---|---|---|---|
+| Arc B580 | 14.59 TF | 29.18 TF | 116.7 TF | 233.5 TOPS |
+| Arc Pro B50 | 10.65 TF | 21.30 TF | 85.2 TF | 170.4 TOPS |
+| Arc Pro B60 | 12.29 TF | 24.58 TF | 98.3 TF | 196.6 TOPS |
+| Arc Pro B65 | 12.29 TF | 24.58 TF | 98.3 TF | 196.6 TOPS |
+| Arc Pro B70 | 22.94 TF | 45.88 TF | 183.5 TF | 367.0 TOPS |
+
+Matmuls run on XMX, so the roofline uses the two XMX columns; the
+vector columns are listed so a quoted FP16 figure can be recognised as
+the vector rate. Intel's spec pages give per-card FP32 and INT8 totals;
+`tests/hardware-table.sh` checks that the formula reproduces them to
+within 1%. The per-unit INT8 and FP32 rates fall out of those totals;
+BF16 at half the INT8 rate is the ratio Intel's oneAPI GPU
+optimization guide gives for Xe-HPG and Xe-HPC. The peak clock is
+Intel's Graphics Max Dynamic Clock where it lists one (B50, B70), and
+its Graphics Clock for the B60 and B65. The B580 lists only a Graphics
+Clock; its peak clock is 2850 MHz, the clock at which Intel's published
+233 INT8 TOPS is reached.
 
 Each row in the JSON cites Intel's SKU spec page directly, and every
 PCI device ID matches both that page and the pci.ids database. The
