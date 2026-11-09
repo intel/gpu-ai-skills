@@ -5731,6 +5731,29 @@ class TestVerifyUsesTheSameBand:
         assert common.active_params(d) < 0.25 * common.count_params(d)
 
 
+class TestFactorsByTier:
+    """A compute tier's MFU band overrides the runtime's default band."""
+
+    @staticmethod
+    def _roofline():
+        return TestEagerIsOptInAcrossTiers._script("roofline")
+
+    ROW = {"mfu_min": 0.30, "mfu_max": 0.65, "bwe_min": 0.40, "bwe_max": 0.65,
+           "mfu_by_tier": {"xmx_bf16": {"mfu_min": 0.075, "mfu_max": 0.1625}}}
+
+    def test_tier_with_its_own_band_uses_it(self):
+        f = self._roofline().factors_from_dict(self.ROW, "xmx_bf16")
+        assert (f.mfu_min, f.mfu_max) == (0.075, 0.1625)
+        # Bandwidth efficiency is not per tier.
+        assert (f.bwe_min, f.bwe_max) == (0.40, 0.65)
+
+    def test_other_tiers_and_no_tier_use_the_default(self):
+        roofline = self._roofline()
+        for tier in ("xmx_int8", None):
+            f = roofline.factors_from_dict(self.ROW, tier)
+            assert (f.mfu_min, f.mfu_max) == (0.30, 0.65)
+
+
 class TestEagerIsOptInAcrossTiers:
     """recommend, calibrate, and verify must all launch graphs-on by default.
 

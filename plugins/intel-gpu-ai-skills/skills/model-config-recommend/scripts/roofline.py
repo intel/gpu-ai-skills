@@ -38,10 +38,18 @@ class PhaseResult:
     bottleneck: str
 
 
-def factors_from_dict(row: dict) -> Factors:
+def factors_from_dict(row: dict, tier: str | None = None) -> Factors:
+    """Build the factor band for one runtime.
+
+    A runtime row may carry ``mfu_by_tier`` to give a compute tier its own
+    MFU band; MFU is relative to that tier's peak, and tiers whose kernels
+    reach different fractions of their peak need different bands. Tiers
+    without an entry, and callers that pass no tier, use the row's band.
+    """
+    mfu = row.get("mfu_by_tier", {}).get(tier, row) if tier else row
     return Factors(
-        mfu_min=float(row["mfu_min"]),
-        mfu_max=float(row["mfu_max"]),
+        mfu_min=float(mfu["mfu_min"]),
+        mfu_max=float(mfu["mfu_max"]),
         bwe_min=float(row["bwe_min"]),
         bwe_max=float(row["bwe_max"]),
     )

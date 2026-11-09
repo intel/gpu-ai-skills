@@ -79,7 +79,8 @@ def main(argv: list[str] | None = None) -> int:
 
     device = next(d for d in HW["devices"] if d["id"] == args.device)
     quant = HW["quants"][args.quant]
-    factors = factors_from_dict(HW["framework_factors"][args.runtime])
+    factors = factors_from_dict(HW["framework_factors"][args.runtime],
+                                quant["compute_tier"])
     weight_bytes = params_per_rank * quant["bytes_per_param"]
     kv_per_token = kv_bytes_per_token(dims, kv_dtype_bytes(args.kv_dtype)) / kv_shards(dims, args.tensor_parallel)
     roof_kwargs = {

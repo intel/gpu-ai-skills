@@ -356,7 +356,6 @@ def rank_candidates(d: ModelDims, params: int, ctx: int, concurrency: int,
                     device: dict, framework: str, available_variants: dict,
                     num_devices: int,
                     gpu_memory_utilization: float) -> list[Candidate]:
-    factors = factors_from_dict(HW["framework_factors"][framework])
     candidates = []
 
     # Order to prefer: safe fallback first, then memory-saving and quantized paths.
@@ -384,6 +383,8 @@ def rank_candidates(d: ModelDims, params: int, ctx: int, concurrency: int,
                 continue
 
             qmeta = HW["quants"][quant]
+            factors = factors_from_dict(HW["framework_factors"][framework],
+                                        qmeta["compute_tier"])
             # The roofline wants what a token reads, not what sits in memory:
             # on an MoE only the active experts, and never the vision tower.
             params_per_rank = active_params(d) / tp
@@ -888,6 +889,8 @@ def main(argv: list[str] | None = None) -> int:
                      f"scripts/calibrate.py.")
         f = HW["framework_factors"][args.runtime]
         f["mfu_min"] = f["mfu_max"] = mfu_measured
+        # The measurement replaces every tier's band, not just the default.
+        f.pop("mfu_by_tier", None)
         f["bwe_min"] = f["bwe_max"] = bwe_measured
         print(f"# Using calibration from {candidates[0].name}: "
               f"MFU={mfu_measured:.2f} BWE={bwe_measured:.2f}")
