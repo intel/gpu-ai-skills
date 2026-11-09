@@ -1,5 +1,5 @@
 {
-  "_comment": "Intel Arc B-series specs from published Intel sources. Each row cites the SKU spec page or Intel datasheet. FP16 and BF16 share the same XMX throughput tier on Xe2; we list the value once. INT4 is not separately published by Intel — for W4A8 paths, use the INT8 number (the activation side governs throughput). Die note: B70 uses BMG-G31 (full die, 32 Xe cores, 256-bit bus). B580 and B60 use BMG-G21 (smaller die, 20 Xe cores, 192-bit bus). Compute and bandwidth scale with die. pci_device_id: the value shown in brackets by `xpu-smi discovery` / `lspci -d 8086:` (e.g. `Intel(R) Graphics [0xe223]` → arc-pro-b70). Source: each SKU's Intel spec page (PCI device ID field), matching the pci.ids database names (Battlemage G21 [Arc Pro B50] 0xe212, Battlemage G31 [Arc Pro B65] 0xe222); B580, B60 and B70 also confirmed by lspci on the hardware.",
+  "_comment": "Intel Arc B-series specs from published Intel sources. Each row cites the SKU spec page or Intel datasheet. FP16 and BF16 share the same XMX throughput tier on Xe2; we list the value once. INT4 is not separately published by Intel — for W4A8 paths, use the INT8 number (the activation side governs throughput). Die note: B70 uses BMG-G31 (full die, 32 Xe cores, 256-bit bus). B580 and B60 use BMG-G21 (smaller die, 20 Xe cores, 192-bit bus); B50 is a low-power G21 bin with 16 Xe cores and a 128-bit bus at 14 Gbps. B580 FP32: 14.59 is 160 vector engines x 32 FLOP/clk x the 2850 MHz clock at which Intel's published 233 INT8 TOPS is reached. Compute and bandwidth scale with die. pci_device_id: the value shown in brackets by `xpu-smi discovery` / `lspci -d 8086:` (e.g. `Intel(R) Graphics [0xe223]` → arc-pro-b70). Source: each SKU's Intel spec page (PCI device ID field), matching the pci.ids database names (Battlemage G21 [Arc Pro B50] 0xe212, Battlemage G31 [Arc Pro B65] 0xe222); B580, B60 and B70 also confirmed by lspci on the hardware.",
   "devices": [
     {
       "id": "arc-b580",
@@ -10,8 +10,8 @@
       "arch": "Xe2 (Battlemage)",
       "vram_gb": 12,
       "memory_bandwidth_gbs": 456,
-      "fp32_tflops": 13.4,
-      "fp16_bf16_tflops": 26.9,
+      "fp32_tflops": 14.59,
+      "fp16_bf16_tflops": 29.18,
       "int8_tops": 233,
       "xe_cores": 20,
       "xmx_engines": 160,
