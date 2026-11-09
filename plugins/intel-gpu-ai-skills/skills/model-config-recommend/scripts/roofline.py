@@ -13,6 +13,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# The peak a calibrated MFU is a fraction of. calibrate.py stamps it into
+# every cache file and recommend.py refuses a file measured against another
+# peak: the same TTFT backs out a different MFU against a different peak, so
+# applying it across a change of basis would scale every prefill prediction.
+CALIBRATION_PEAK_BASIS = "fp16_bf16_tflops"
+# Cache files written before the stamp existed were measured against this.
+LEGACY_CALIBRATION_PEAK_BASIS = "fp16_bf16_tflops"
+
 
 @dataclass(frozen=True)
 class Factors:

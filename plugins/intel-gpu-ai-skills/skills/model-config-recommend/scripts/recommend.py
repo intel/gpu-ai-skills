@@ -41,7 +41,8 @@ from common import (
     vllm_block_tokens,
     vllm_reservation,
 )
-from roofline import factors_from_dict, peak_ops_s, phase_roofline
+from roofline import (CALIBRATION_PEAK_BASIS, LEGACY_CALIBRATION_PEAK_BASIS,
+                      factors_from_dict, peak_ops_s, phase_roofline)
 
 GB = 1024 ** 3
 HERE = Path(__file__).resolve().parent.parent
@@ -887,6 +888,13 @@ def main(argv: list[str] | None = None) -> int:
             sys.exit(f"calibration cache {candidates[0]} is corrupt "
                      f"({type(exc).__name__}: {exc}). Delete it and re-run "
                      f"scripts/calibrate.py.")
+        basis = cal.get("peak_basis", LEGACY_CALIBRATION_PEAK_BASIS)
+        if basis != CALIBRATION_PEAK_BASIS:
+            sys.exit(f"calibration cache {candidates[0]} measured MFU against "
+                     f"the {basis} peak, but this hardware table models "
+                     f"prefill on {CALIBRATION_PEAK_BASIS}. Re-run "
+                     f"scripts/calibrate.py to measure against the current "
+                     f"peak.")
         f = HW["framework_factors"][args.runtime]
         f["mfu_min"] = f["mfu_max"] = mfu_measured
         # The measurement replaces every tier's band, not just the default.

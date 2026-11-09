@@ -32,6 +32,7 @@ import urllib.request
 from pathlib import Path
 
 from common import docker_image_id
+from roofline import CALIBRATION_PEAK_BASIS
 
 HERE = Path(__file__).resolve().parent.parent
 HW = json.loads((HERE / "data" / "hardware.json").read_text())
@@ -191,7 +192,7 @@ def derive_factors(measurement: dict, device: dict) -> dict:
     tpot_s = measurement["tpot_median_ms"] / 1000
 
     # MFU: TTFT = prompt / (peak * MFU / (2 * params)) → MFU = (prompt * 2 * params) / (TTFT * peak)
-    peak_flops = device["fp16_bf16_tflops"] * 1e12
+    peak_flops = device[CALIBRATION_PEAK_BASIS] * 1e12
     mfu = (prompt * 2 * params) / (ttft_s * peak_flops)
     mfu = max(0.05, min(mfu, 0.95))
 
@@ -202,6 +203,7 @@ def derive_factors(measurement: dict, device: dict) -> dict:
     bwe = max(0.05, min(bwe, 0.99))
 
     return {"mfu_measured": mfu, "bwe_measured": bwe,
+            "peak_basis": CALIBRATION_PEAK_BASIS,
             "calibrated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "raw": measurement}
 

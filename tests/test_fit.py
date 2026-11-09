@@ -5864,6 +5864,25 @@ class TestEagerIsOptInAcrossTiers:
         with pytest.raises(self._Launched):
             recommend.main(argv + ["--enforce-eager"])
 
+    def test_calibration_against_another_peak_is_refused(self, monkeypatch, tmp_path):
+        # An MFU backed out against one peak scales every prediction made
+        # against another, so the file must be re-measured, not reused.
+        body = dict(self._cal(False), peak_basis="some_older_peak")
+        files = {"arc-pro-b70__d1.json": body}
+        recommend, argv = self._use_calibration(monkeypatch, tmp_path, files)
+        with pytest.raises(SystemExit) as exc:
+            recommend.main(argv)
+        assert "measured MFU against the some_older_peak peak" in str(exc.value)
+
+    def test_calibrate_stamps_the_peak_it_used(self):
+        calibrate = self._script("calibrate")
+        roofline = self._script("roofline")
+        device = next(d for d in calibrate.HW["devices"] if d["id"] == "arc-pro-b70")
+        m = {"params": 1.5e9, "prompt_tokens": 512, "ttft_median_ms": 100.0,
+             "tpot_median_ms": 10.0}
+        assert (calibrate.derive_factors(m, device)["peak_basis"]
+                == roofline.CALIBRATION_PEAK_BASIS)
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v", "-s"]))
