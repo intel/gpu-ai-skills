@@ -121,14 +121,11 @@
       "xmx_int8": {"unit": "xmx_engines", "ops_per_clk": 512}
     }
   },
-  "_framework_factors_comment": "Roofline efficiency knobs. MFU = Model FLOP Utilization (compute roof, prefill). BWE = Bandwidth Efficiency (memory roof, decode). Ranges are community-typical for the named runtime, not measurements from any specific stack. Width reflects 'maturing kernel coverage' as the lower bound and 'well-tuned kernel' as the upper. The skill emits a band, not a point estimate. Use scripts/calibrate.py to anchor these to your specific (image, device) combination; it overrides the band for that run. mfu_by_tier gives a compute tier its own band. The xmx_bf16 bands are a stop-gap: they are the old bands divided by 4, because BF16 prefill used to be modelled on the vector FP16 peak, which is a quarter of the XMX BF16 peak, so they reproduce the BF16 and FP8 predictions made before the change. Replace them with bands from a calibrate.py run once one exists; calibrate.py already measures against the XMX BF16 peak.",
+  "_framework_factors_comment": "Roofline efficiency knobs. MFU = Model FLOP Utilization (compute roof, prefill). BWE = Bandwidth Efficiency (memory roof, decode). Ranges are community-typical for the named runtime, not measurements from any specific stack. Width reflects 'maturing kernel coverage' as the lower bound and 'well-tuned kernel' as the upper. The skill emits a band, not a point estimate. Use scripts/calibrate.py to anchor these to your specific (image, device) combination; it overrides the band for that run. A runtime row may add mfu_by_tier to give a compute tier its own band; none does, so every tier uses the runtime's band, applied to that tier's XMX peak.",
   "framework_factors": {
-    "vllm-xpu":   {"mfu_min": 0.30, "mfu_max": 0.65, "bwe_min": 0.40, "bwe_max": 0.65,
-                  "mfu_by_tier": {"xmx_bf16": {"mfu_min": 0.075, "mfu_max": 0.1625}}},
-    "sglang-xpu": {"mfu_min": 0.30, "mfu_max": 0.65, "bwe_min": 0.30, "bwe_max": 0.85,
-                  "mfu_by_tier": {"xmx_bf16": {"mfu_min": 0.075, "mfu_max": 0.1625}}},
-    "torch-xpu":  {"mfu_min": 0.20, "mfu_max": 0.55, "bwe_min": 0.25, "bwe_max": 0.75,
-                  "mfu_by_tier": {"xmx_bf16": {"mfu_min": 0.05, "mfu_max": 0.1375}}}
+    "vllm-xpu":   {"mfu_min": 0.30, "mfu_max": 0.65, "bwe_min": 0.40, "bwe_max": 0.65},
+    "sglang-xpu": {"mfu_min": 0.30, "mfu_max": 0.65, "bwe_min": 0.30, "bwe_max": 0.85},
+    "torch-xpu":  {"mfu_min": 0.20, "mfu_max": 0.55, "bwe_min": 0.25, "bwe_max": 0.75}
   },
   "_quant_comment": "Bytes per parameter and which arch_rates compute tier each quant routes to on Xe2 XMX. W4A8 (awq/gptq/auto-round/inc) uses the INT8 DPAS tier because activations are int8. Plain FP8 weights stay on the XMX BF16 tier: Battlemage XMX has no native FP8 matmul DPAS, so kernels dequantize FP8 to BF16 before the matmul. FP8 still saves memory bytes (1.0 vs 2.0 per weight) but does not get the int8-tier compute speedup.",
   "quants": {

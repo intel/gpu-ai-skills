@@ -218,11 +218,10 @@ concurrency are found by search rather than by division.
 `peak_compute` is the quant's XMX tier, computed as
 `xmx_engines × ops_per_clk × peak_clock` from `data/hardware.json`
 (see "Hardware coverage"). MFU (compute efficiency) and BWE (bandwidth
-efficiency) live there too, as ranges per runtime, and a runtime can
-give a compute tier its own MFU band (`mfu_by_tier`). The XMX BF16
-band is a stop-gap, a quarter of the INT8 band, chosen to keep BF16
-predictions where they were when BF16 was modelled on the vector
-peak; a `calibrate.py` run replaces it. See "Worked example" below for
+efficiency) live there too, as ranges per runtime. Every compute tier
+uses its runtime's band against that tier's XMX peak; a runtime can
+give a tier its own band (`mfu_by_tier`), and a `calibrate.py` run
+replaces the band with a measured point. See "Worked example" below for
 why bands are wide. Roofline reference: Williams,
 Waterman, Patterson, *Communications of the ACM* 52(4), 2008.
 
