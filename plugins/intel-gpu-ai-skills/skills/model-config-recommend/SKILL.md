@@ -153,7 +153,7 @@ when the W4A8 kernel is active; FP8/BF16 stay on the BF16 tier.
 | `--quantization` | Bytes/param | XMX tier | CLI pairing |
 |---|---:|---|---|
 | (omit; BF16/FP16) | 2.0 | XMX BF16 (183.5 TF on B70) | `--dtype bfloat16`, `--kv-cache-dtype auto` |
-| `fp8` | 1.0 | XMX BF16 (no native FP8 DPAS — kernel dequantizes FP8->BF16) | `--kv-cache-dtype fp8`, `--attention-backend TRITON_ATTN` |
+| `fp8` | 1.0 | XMX BF16 (no native FP8 DPAS; the kernel dequantizes FP8 to BF16) | `--kv-cache-dtype fp8`, `--attention-backend TRITON_ATTN` |
 | `awq` / `gptq` | 0.55 | INT8-modeled when W4A8 kernel is active | `--kv-cache-dtype fp8`, `--attention-backend TRITON_ATTN` |
 | `inc` | 0.55 | INT8-modeled when W4A8 kernel is active | INC-quantized pipelines only; most AutoRound checkpoints auto-detect via `gptq`/`awq` instead. |
 | `mxfp4` | 0.55 | INT8-modeled W4A8-style path | Microscaling FP4 (GPT-OSS family). |
