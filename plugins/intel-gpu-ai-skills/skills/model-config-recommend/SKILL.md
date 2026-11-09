@@ -70,7 +70,10 @@ python3 scripts/verify.py --image vllm/vllm-openai-xpu:latest --device arc-pro-b
 All three tiers assume XPU graphs on, the vLLM v0.31.0+ default. For a
 pre-v0.31.0 image, pass `--enforce-eager` to every tier so calibration,
 prediction, and verification measure the same launch. Calibrations are cached
-per mode, and `--use-calibration` refuses one taken in the other mode.
+per mode, and `--use-calibration` refuses one taken in the other mode. It also
+refuses a calibration measured against a different peak than the current
+hardware table models (files from before BF16 moved to the XMX peak); re-run
+`calibrate.py` to replace it.
 
 For a plain roofline readout without a launch recommendation:
 
@@ -142,14 +145,15 @@ needs no pin.
 
 `--quantization` drives both kernel selection and which compute
 tier the matmuls land on. The Xe2 XMX engines run **INT8 at 367
-TOPS** vs **FP16/BF16 at 45.88 TFLOPS** (Arc Pro B70 spec). The
-roofline models W4A8 as INT8-tier when the W4A8 kernel is active;
-FP8/BF16 stay on the FP16 tier.
+TOPS** and **BF16 at 183.5 TFLOPS** on an Arc Pro B70, a 2:1 ratio.
+The 45.88 TFLOPS sometimes quoted for FP16 is the vector-engine rate,
+not the XMX rate matmuls use. The roofline models W4A8 as INT8-tier
+when the W4A8 kernel is active; FP8/BF16 stay on the BF16 tier.
 
 | `--quantization` | Bytes/param | XMX tier | CLI pairing |
 |---|---:|---|---|
-| (omit; BF16/FP16) | 2.0 | FP16/BF16 (45.88 TF on B70) | `--dtype bfloat16`, `--kv-cache-dtype auto` |
-| `fp8` | 1.0 | FP16/BF16 (no native FP8 DPAS — kernel dequantizes FP8->BF16) | `--kv-cache-dtype fp8`, `--attention-backend TRITON_ATTN` |
+| (omit; BF16/FP16) | 2.0 | XMX BF16 (183.5 TF on B70) | `--dtype bfloat16`, `--kv-cache-dtype auto` |
+| `fp8` | 1.0 | XMX BF16 (no native FP8 DPAS; the kernel dequantizes FP8 to BF16) | `--kv-cache-dtype fp8`, `--attention-backend TRITON_ATTN` |
 | `awq` / `gptq` | 0.55 | INT8-modeled when W4A8 kernel is active | `--kv-cache-dtype fp8`, `--attention-backend TRITON_ATTN` |
 | `inc` | 0.55 | INT8-modeled when W4A8 kernel is active | INC-quantized pipelines only; most AutoRound checkpoints auto-detect via `gptq`/`awq` instead. |
 | `mxfp4` | 0.55 | INT8-modeled W4A8-style path | Microscaling FP4 (GPT-OSS family). |
@@ -211,26 +215,55 @@ Because neither
 curve is a straight line, the reported maximum context and maximum
 concurrency are found by search rather than by division.
 
-MFU (compute efficiency) and BWE (bandwidth efficiency) live in
-`data/hardware.json` as ranges per runtime — see "Worked example"
-below for why bands are wide. Roofline reference: Williams,
+`peak_compute` is the quant's XMX tier, computed as
+`xmx_engines × ops_per_clk × peak_clock` from `data/hardware.json`
+(see "Hardware coverage"). MFU (compute efficiency) and BWE (bandwidth
+efficiency) live there too, as ranges per runtime. Every compute tier
+uses its runtime's band against that tier's XMX peak; a runtime can
+give a tier its own band (`mfu_by_tier`), and a `calibrate.py` run
+replaces the band with a measured point. See "Worked example" below for
+why bands are wide. Roofline reference: Williams,
 Waterman, Patterson, *Communications of the ACM* 52(4), 2008.
 
 ## Hardware coverage (`data/hardware.json`)
 
-| Card | PCI device ID | Die | VRAM | Bandwidth | FP16/BF16 | INT8 |
-|---|---|---|---|---|---|---|
-| Arc B580 | `0xe20b` | BMG-G21 | 12 GB | 456 GB/s | 26.9 TF | 233 TOPS |
-| Arc Pro B50 | `0xe220` ¹ | BMG-G21 (LP) | 16 GB | 224 GB/s | 21.30 TF | 170 TOPS |
-| Arc Pro B60 | `0xe211` ¹ | BMG-G21 | 24 GB | 456 GB/s | 24.56 TF | 197 TOPS |
-| Arc Pro B65 | `0xe221` ¹ | BMG-G31 (cut) | 32 GB | 608 GB/s | 24.56 TF | 197 TOPS |
-| Arc Pro B70 | `0xe223` | BMG-G31 (full) | 32 GB | 608 GB/s | 45.88 TF | 367 TOPS |
+| Card | PCI device ID | Die | VRAM | Bus | Bandwidth | XVE / XMX engines | Peak clock |
+|---|---|---|---|---|---|---|---|
+| Arc B580 | `0xe20b` | BMG-G21 | 12 GB | 192-bit | 456 GB/s | 160 / 160 | 2850 MHz |
+| Arc Pro B50 | `0xe212` | BMG-G21 | 16 GB | 128-bit | 224 GB/s | 128 / 128 | 2600 MHz |
+| Arc Pro B60 | `0xe211` | BMG-G21 | 24 GB | 192-bit | 456 GB/s | 160 / 160 | 2400 MHz |
+| Arc Pro B65 | `0xe222` | BMG-G31 | 32 GB | 256-bit | 608 GB/s | 160 / 160 | 2400 MHz |
+| Arc Pro B70 | `0xe223` | BMG-G31 | 32 GB | 256-bit | 608 GB/s | 256 / 256 | 2800 MHz |
 
-¹ Provisional — derived from the xe kernel driver's `INTEL_BMG_IDS`
-list; not yet verified by `lspci` on physical hardware.
+The JSON stores unit counts, clocks and per-unit rates, not peak
+totals. Each peak is `units × ops_per_clk × peak_clock`, with Xe2
+rates per vector engine (XVE) of 32 FP32 and 64 FP16 FLOP/clk, and per
+XMX engine of 256 BF16 FLOP/clk and 512 INT8 ops/clk:
 
-Each row in the JSON cites Intel's SKU spec page directly. The PCI
-device ID is what `xpu-smi discovery` and `lspci -d 8086:` show in
+| Card | FP32 vector | FP16 vector | BF16 XMX | INT8 XMX |
+|---|---|---|---|---|
+| Arc B580 | 14.59 TF | 29.18 TF | 116.7 TF | 233.5 TOPS |
+| Arc Pro B50 | 10.65 TF | 21.30 TF | 85.2 TF | 170.4 TOPS |
+| Arc Pro B60 | 12.29 TF | 24.58 TF | 98.3 TF | 196.6 TOPS |
+| Arc Pro B65 | 12.29 TF | 24.58 TF | 98.3 TF | 196.6 TOPS |
+| Arc Pro B70 | 22.94 TF | 45.88 TF | 183.5 TF | 367.0 TOPS |
+
+Matmuls run on XMX, so the roofline uses the two XMX columns; the
+vector columns are listed so a quoted FP16 figure can be recognised as
+the vector rate. Intel's spec pages give per-card FP32 and INT8 totals;
+`tests/hardware-table.sh` checks that the formula reproduces them to
+within 1%. The per-unit INT8 and FP32 rates fall out of those totals;
+BF16 at half the INT8 rate is the ratio Intel's oneAPI GPU
+optimization guide gives for Xe-HPG and Xe-HPC. The peak clock is
+Intel's Graphics Max Dynamic Clock where it lists one (B50, B70), and
+its Graphics Clock for the B60 and B65. The B580 lists only a Graphics
+Clock; its peak clock is 2850 MHz, the clock at which Intel's published
+233 INT8 TOPS is reached.
+
+Each row in the JSON cites Intel's SKU spec page directly, and every
+PCI device ID matches both that page and the pci.ids database. The die
+is the name pci.ids gives that ID. The
+PCI device ID is what `xpu-smi discovery` and `lspci -d 8086:` show in
 brackets (e.g. `Intel(R) Graphics [0xe223]`).
 
 ## Worked example

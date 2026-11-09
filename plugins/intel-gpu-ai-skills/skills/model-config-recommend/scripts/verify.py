@@ -70,8 +70,9 @@ def predict_for(model_id: str, device_id: str, runtime: str, ctx: int,
     d = parse_model_dims(cfg)
     params = count_params(d)
     device = next(x for x in HW["devices"] if x["id"] == device_id)
-    factors = factors_from_dict(HW["framework_factors"][runtime])
     qmeta = HW["quants"][quant]
+    factors = factors_from_dict(HW["framework_factors"][runtime],
+                                qmeta["compute_tier"])
 
     kv_dtype = "fp8" if quant != "bf16" else "bfloat16"
     fit = evaluate_fit(d, params, quant, kv_dtype, ctx, concurrency, 1,
@@ -92,7 +93,7 @@ def predict_for(model_id: str, device_id: str, runtime: str, ctx: int,
         "kv_bytes_per_token": kv_per_tok,
         "context_tokens": ctx,
         "include_kv": True,
-        "peak_ops_per_s": peak_ops_s(device, qmeta),
+        "peak_ops_per_s": peak_ops_s(device, qmeta, HW["arch_rates"]),
         "bandwidth_bytes_per_s": device["memory_bandwidth_gbs"] * 1e9,
         "factors": factors,
     }
