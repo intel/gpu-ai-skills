@@ -231,10 +231,10 @@ Waterman, Patterson, *Communications of the ACM* 52(4), 2008.
 | Card | PCI device ID | Die | VRAM | Bus | Bandwidth | XVE / XMX engines | Peak clock |
 |---|---|---|---|---|---|---|---|
 | Arc B580 | `0xe20b` | BMG-G21 | 12 GB | 192-bit | 456 GB/s | 160 / 160 | 2850 MHz |
-| Arc Pro B50 | `0xe212` | BMG-G21 (LP) | 16 GB | 128-bit | 224 GB/s | 128 / 128 | 2600 MHz |
+| Arc Pro B50 | `0xe212` | BMG-G21 | 16 GB | 128-bit | 224 GB/s | 128 / 128 | 2600 MHz |
 | Arc Pro B60 | `0xe211` | BMG-G21 | 24 GB | 192-bit | 456 GB/s | 160 / 160 | 2400 MHz |
-| Arc Pro B65 | `0xe222` | BMG-G31 (cut) | 32 GB | 256-bit | 608 GB/s | 160 / 160 | 2400 MHz |
-| Arc Pro B70 | `0xe223` | BMG-G31 (full) | 32 GB | 256-bit | 608 GB/s | 256 / 256 | 2800 MHz |
+| Arc Pro B65 | `0xe222` | BMG-G31 | 32 GB | 256-bit | 608 GB/s | 160 / 160 | 2400 MHz |
+| Arc Pro B70 | `0xe223` | BMG-G31 | 32 GB | 256-bit | 608 GB/s | 256 / 256 | 2800 MHz |
 
 The JSON stores unit counts, clocks and per-unit rates, not peak
 totals. Each peak is `units × ops_per_clk × peak_clock`, with Xe2
@@ -262,7 +262,8 @@ Clock; its peak clock is 2850 MHz, the clock at which Intel's published
 233 INT8 TOPS is reached.
 
 Each row in the JSON cites Intel's SKU spec page directly, and every
-PCI device ID matches both that page and the pci.ids database. The
+PCI device ID matches both that page and the pci.ids database. The die
+is the name pci.ids gives that ID. The
 PCI device ID is what `xpu-smi discovery` and `lspci -d 8086:` show in
 brackets (e.g. `Intel(R) Graphics [0xe223]`).
 

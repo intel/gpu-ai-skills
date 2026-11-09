@@ -1,5 +1,5 @@
 {
-  "_comment": "Intel Arc B-series specs from published Intel sources. Each row cites the SKU spec page or Intel datasheet. Compute peaks are not read from per-card totals: the roofline computes each tier as units x ops_per_clk x peak_clock_mhz from arch_rates (see _arch_rates_comment). BF16, FP16 and FP8 matmuls run on the XMX BF16 tier; W4A8 paths run on the XMX INT8 tier (the activation side governs throughput). Die note: B70 uses BMG-G31 (full die, 32 Xe cores, 256-bit bus). B580 and B60 use BMG-G21 (smaller die, 20 Xe cores, 192-bit bus); B50 is a low-power G21 bin with 16 Xe cores and a 128-bit bus at 14 Gbps. B580 FP32: 14.59 is 160 vector engines x 32 FLOP/clk x the 2850 MHz clock at which Intel's published 233 INT8 TOPS is reached. Compute and bandwidth scale with die. pci_device_id: the value shown in brackets by `xpu-smi discovery` / `lspci -d 8086:` (e.g. `Intel(R) Graphics [0xe223]` → arc-pro-b70). Source: each SKU's Intel spec page (PCI device ID field), matching the pci.ids database names (Battlemage G21 [Arc Pro B50] 0xe212, Battlemage G31 [Arc Pro B65] 0xe222); B580, B60 and B70 also confirmed by lspci on the hardware.",
+  "_comment": "Intel Arc B-series specs from published Intel sources. Each row cites the SKU spec page or Intel datasheet. Compute peaks are not read from per-card totals: the roofline computes each tier as units x ops_per_clk x peak_clock_mhz from arch_rates (see _arch_rates_comment). BF16, FP16 and FP8 matmuls run on the XMX BF16 tier; W4A8 paths run on the XMX INT8 tier (the activation side governs throughput). Die: the G21 or G31 name pci.ids gives each PCI device ID. Core counts and bus widths are Intel's: B580 and B60 are G21 with 20 Xe cores and a 192-bit bus, B50 is G21 with 16 Xe cores and a 128-bit bus at 14 Gbps, B65 is G31 with 20 Xe cores and B70 is G31 with 32, both on a 256-bit bus. B580 FP32: 14.59 is 160 vector engines x 32 FLOP/clk x the 2850 MHz clock at which Intel's published 233 INT8 TOPS is reached. pci_device_id: the value shown in brackets by `xpu-smi discovery` / `lspci -d 8086:` (e.g. `Intel(R) Graphics [0xe223]` → arc-pro-b70). Source: each SKU's Intel spec page (PCI device ID field), matching the pci.ids database names (Battlemage G21 [Arc Pro B50] 0xe212, Battlemage G31 [Arc Pro B65] 0xe222); B580, B60 and B70 also confirmed by lspci on the hardware.",
   "devices": [
     {
       "id": "arc-b580",
@@ -29,7 +29,7 @@
       "pci_device_id": "0xe212",
       "pci_ids_name": "Battlemage G21 [Arc Pro B50]",
       "category": "workstation",
-      "die": "BMG-G21 (low-power bin)",
+      "die": "BMG-G21",
       "arch": "Xe2 (Battlemage)",
       "arch_id": "xe2",
       "vram_gb": 16,
@@ -73,7 +73,7 @@
       "pci_device_id": "0xe222",
       "pci_ids_name": "Battlemage G31 [Arc Pro B65]",
       "category": "workstation",
-      "die": "BMG-G31 (compute-binned, full memory bus)",
+      "die": "BMG-G31",
       "arch": "Xe2 (Battlemage)",
       "arch_id": "xe2",
       "vram_gb": 32,
@@ -95,7 +95,7 @@
       "pci_device_id": "0xe223",
       "pci_ids_name": "Battlemage G31 [Arc Pro B70]",
       "category": "workstation",
-      "die": "BMG-G31 (full)",
+      "die": "BMG-G31",
       "arch": "Xe2 (Battlemage)",
       "arch_id": "xe2",
       "vram_gb": 32,
