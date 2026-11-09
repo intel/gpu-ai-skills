@@ -5754,6 +5754,30 @@ class TestFactorsByTier:
             assert (f.mfu_min, f.mfu_max) == (0.30, 0.65)
 
 
+class TestXmxPeaks:
+    """Compute peaks are units x ops_per_clk x clock, on the XMX tiers."""
+
+    def test_b70_peaks_match_intel_and_the_2_to_1_ratio(self):
+        roofline = TestEagerIsOptInAcrossTiers._script("roofline")
+        calibrate = TestEagerIsOptInAcrossTiers._script("calibrate")
+        hw = calibrate.HW
+        b70 = next(d for d in hw["devices"] if d["id"] == "arc-pro-b70")
+        bf16 = roofline.peak_ops_s(b70, hw["quants"]["bf16"], hw["arch_rates"])
+        int8 = roofline.peak_ops_s(b70, hw["quants"]["awq"], hw["arch_rates"])
+        assert int8 == pytest.approx(b70["published"]["int8_tops"] * 1e12, rel=1e-3)
+        assert int8 == pytest.approx(2 * bf16)
+        # FP8 has no XMX path of its own on Xe2: it runs on the BF16 tier.
+        assert roofline.peak_ops_s(b70, hw["quants"]["fp8"], hw["arch_rates"]) == bf16
+
+    def test_unknown_tier_is_an_error(self):
+        roofline = TestEagerIsOptInAcrossTiers._script("roofline")
+        calibrate = TestEagerIsOptInAcrossTiers._script("calibrate")
+        b70 = next(d for d in calibrate.HW["devices"] if d["id"] == "arc-pro-b70")
+        with pytest.raises(ValueError, match="no compute tier"):
+            roofline.peak_ops_s(b70, {"compute_tier": "xmx_fp4"},
+                                calibrate.HW["arch_rates"])
+
+
 class TestEagerIsOptInAcrossTiers:
     """recommend, calibrate, and verify must all launch graphs-on by default.
 
@@ -5839,10 +5863,12 @@ class TestEagerIsOptInAcrossTiers:
         return recommend, argv
 
     @staticmethod
-    def _cal(eager=None, mfu=0.3, bwe=0.6):
+    def _cal(eager=None, mfu=0.3, bwe=0.6, peak_basis="xmx_bf16"):
         body = {"mfu_measured": mfu, "bwe_measured": bwe, "image": "img:tag"}
         if eager is not None:
             body["enforce_eager"] = eager
+        if peak_basis is not None:
+            body["peak_basis"] = peak_basis
         return body
 
     def test_use_calibration_picks_matching_mode(self, monkeypatch, tmp_path, capsys):
@@ -5873,6 +5899,15 @@ class TestEagerIsOptInAcrossTiers:
         with pytest.raises(SystemExit) as exc:
             recommend.main(argv)
         assert "measured MFU against the some_older_peak peak" in str(exc.value)
+
+    def test_calibration_from_before_the_stamp_is_refused(self, monkeypatch, tmp_path):
+        # Files without peak_basis were measured against the vector FP16
+        # peak, a quarter of the XMX BF16 peak the roofline now uses.
+        files = {"arc-pro-b70__d1.json": self._cal(False, peak_basis=None)}
+        recommend, argv = self._use_calibration(monkeypatch, tmp_path, files)
+        with pytest.raises(SystemExit) as exc:
+            recommend.main(argv)
+        assert "against the fp16_bf16_tflops peak" in str(exc.value)
 
     def test_calibrate_stamps_the_peak_it_used(self):
         calibrate = self._script("calibrate")

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 # every cache file and recommend.py refuses a file measured against another
 # peak: the same TTFT backs out a different MFU against a different peak, so
 # applying it across a change of basis would scale every prefill prediction.
-CALIBRATION_PEAK_BASIS = "fp16_bf16_tflops"
+CALIBRATION_PEAK_BASIS = "xmx_bf16"
 # Cache files written before the stamp existed were measured against this.
 LEGACY_CALIBRATION_PEAK_BASIS = "fp16_bf16_tflops"
 
@@ -63,11 +63,21 @@ def factors_from_dict(row: dict, tier: str | None = None) -> Factors:
     )
 
 
-def peak_ops_s(device: dict, quant: dict) -> float:
+def peak_ops_s(device: dict, quant: dict, arch_rates: dict) -> float:
+    """Peak ops/s of the quant's compute tier: units x ops_per_clk x clock.
+
+    ``arch_rates`` is hardware.json's per-architecture table of per-unit,
+    per-clock rates, so the peak is traceable to the card's unit count and
+    Intel's listed clock rather than to a hand-copied total.
+    """
     tier = quant["compute_tier"]
-    if tier not in device:
-        raise ValueError(f"device has no compute tier {tier!r}")
-    return float(device[tier]) * 1e12
+    rates = arch_rates.get(device.get("arch_id"), {})
+    if tier not in rates:
+        raise ValueError(f"{device['id']} ({device.get('arch_id')!r}) has no "
+                         f"compute tier {tier!r}")
+    rate = rates[tier]
+    return (float(device[rate["unit"]]) * float(rate["ops_per_clk"])
+            * float(device["peak_clock_mhz"]) * 1e6)
 
 
 def phase_roofline(

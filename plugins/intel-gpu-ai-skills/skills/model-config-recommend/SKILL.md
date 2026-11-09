@@ -70,7 +70,10 @@ python3 scripts/verify.py --image vllm/vllm-openai-xpu:latest --device arc-pro-b
 All three tiers assume XPU graphs on, the vLLM v0.31.0+ default. For a
 pre-v0.31.0 image, pass `--enforce-eager` to every tier so calibration,
 prediction, and verification measure the same launch. Calibrations are cached
-per mode, and `--use-calibration` refuses one taken in the other mode.
+per mode, and `--use-calibration` refuses one taken in the other mode. It also
+refuses a calibration measured against a different peak than the current
+hardware table models (files from before BF16 moved to the XMX peak); re-run
+`calibrate.py` to replace it.
 
 For a plain roofline readout without a launch recommendation:
 
@@ -142,14 +145,15 @@ needs no pin.
 
 `--quantization` drives both kernel selection and which compute
 tier the matmuls land on. The Xe2 XMX engines run **INT8 at 367
-TOPS** vs **FP16/BF16 at 45.88 TFLOPS** (Arc Pro B70 spec). The
-roofline models W4A8 as INT8-tier when the W4A8 kernel is active;
-FP8/BF16 stay on the FP16 tier.
+TOPS** and **BF16 at 183.5 TFLOPS** on an Arc Pro B70, a 2:1 ratio.
+The 45.88 TFLOPS sometimes quoted for FP16 is the vector-engine rate,
+not the XMX rate matmuls use. The roofline models W4A8 as INT8-tier
+when the W4A8 kernel is active; FP8/BF16 stay on the BF16 tier.
 
 | `--quantization` | Bytes/param | XMX tier | CLI pairing |
 |---|---:|---|---|
-| (omit; BF16/FP16) | 2.0 | FP16/BF16 (45.88 TF on B70) | `--dtype bfloat16`, `--kv-cache-dtype auto` |
-| `fp8` | 1.0 | FP16/BF16 (no native FP8 DPAS — kernel dequantizes FP8->BF16) | `--kv-cache-dtype fp8`, `--attention-backend TRITON_ATTN` |
+| (omit; BF16/FP16) | 2.0 | XMX BF16 (183.5 TF on B70) | `--dtype bfloat16`, `--kv-cache-dtype auto` |
+| `fp8` | 1.0 | XMX BF16 (no native FP8 DPAS — kernel dequantizes FP8->BF16) | `--kv-cache-dtype fp8`, `--attention-backend TRITON_ATTN` |
 | `awq` / `gptq` | 0.55 | INT8-modeled when W4A8 kernel is active | `--kv-cache-dtype fp8`, `--attention-backend TRITON_ATTN` |
 | `inc` | 0.55 | INT8-modeled when W4A8 kernel is active | INC-quantized pipelines only; most AutoRound checkpoints auto-detect via `gptq`/`awq` instead. |
 | `mxfp4` | 0.55 | INT8-modeled W4A8-style path | Microscaling FP4 (GPT-OSS family). |
@@ -211,9 +215,15 @@ Because neither
 curve is a straight line, the reported maximum context and maximum
 concurrency are found by search rather than by division.
 
-MFU (compute efficiency) and BWE (bandwidth efficiency) live in
-`data/hardware.json` as ranges per runtime — see "Worked example"
-below for why bands are wide. Roofline reference: Williams,
+`peak_compute` is the quant's XMX tier, computed as
+`xmx_engines × ops_per_clk × peak_clock` from `data/hardware.json`
+(see "Hardware coverage"). MFU (compute efficiency) and BWE (bandwidth
+efficiency) live there too, as ranges per runtime, and a runtime can
+give a compute tier its own MFU band (`mfu_by_tier`). The XMX BF16
+band is a stop-gap, a quarter of the INT8 band, chosen to keep BF16
+predictions where they were when BF16 was modelled on the vector
+peak; a `calibrate.py` run replaces it. See "Worked example" below for
+why bands are wide. Roofline reference: Williams,
 Waterman, Patterson, *Communications of the ACM* 52(4), 2008.
 
 ## Hardware coverage (`data/hardware.json`)

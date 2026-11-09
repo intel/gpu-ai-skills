@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         "kv_bytes_per_token": kv_per_token,
         "context_tokens": args.ctx,
         "include_kv": True,
-        "peak_ops_per_s": peak_ops_s(device, quant),
+        "peak_ops_per_s": peak_ops_s(device, quant, HW["arch_rates"]),
         "bandwidth_bytes_per_s": device["memory_bandwidth_gbs"] * 1e9,
         "factors": factors,
     }

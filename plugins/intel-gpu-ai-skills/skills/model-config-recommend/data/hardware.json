@@ -1,5 +1,5 @@
 {
-  "_comment": "Intel Arc B-series specs from published Intel sources. Each row cites the SKU spec page or Intel datasheet. FP16 and BF16 share the same XMX throughput tier on Xe2; we list the value once. INT4 is not separately published by Intel — for W4A8 paths, use the INT8 number (the activation side governs throughput). Die note: B70 uses BMG-G31 (full die, 32 Xe cores, 256-bit bus). B580 and B60 use BMG-G21 (smaller die, 20 Xe cores, 192-bit bus); B50 is a low-power G21 bin with 16 Xe cores and a 128-bit bus at 14 Gbps. B580 FP32: 14.59 is 160 vector engines x 32 FLOP/clk x the 2850 MHz clock at which Intel's published 233 INT8 TOPS is reached. Compute and bandwidth scale with die. pci_device_id: the value shown in brackets by `xpu-smi discovery` / `lspci -d 8086:` (e.g. `Intel(R) Graphics [0xe223]` → arc-pro-b70). Source: each SKU's Intel spec page (PCI device ID field), matching the pci.ids database names (Battlemage G21 [Arc Pro B50] 0xe212, Battlemage G31 [Arc Pro B65] 0xe222); B580, B60 and B70 also confirmed by lspci on the hardware.",
+  "_comment": "Intel Arc B-series specs from published Intel sources. Each row cites the SKU spec page or Intel datasheet. Compute peaks are not read from per-card totals: the roofline computes each tier as units x ops_per_clk x peak_clock_mhz from arch_rates (see _arch_rates_comment). BF16, FP16 and FP8 matmuls run on the XMX BF16 tier; W4A8 paths run on the XMX INT8 tier (the activation side governs throughput). Die note: B70 uses BMG-G31 (full die, 32 Xe cores, 256-bit bus). B580 and B60 use BMG-G21 (smaller die, 20 Xe cores, 192-bit bus); B50 is a low-power G21 bin with 16 Xe cores and a 128-bit bus at 14 Gbps. B580 FP32: 14.59 is 160 vector engines x 32 FLOP/clk x the 2850 MHz clock at which Intel's published 233 INT8 TOPS is reached. Compute and bandwidth scale with die. pci_device_id: the value shown in brackets by `xpu-smi discovery` / `lspci -d 8086:` (e.g. `Intel(R) Graphics [0xe223]` → arc-pro-b70). Source: each SKU's Intel spec page (PCI device ID field), matching the pci.ids database names (Battlemage G21 [Arc Pro B50] 0xe212, Battlemage G31 [Arc Pro B65] 0xe222); B580, B60 and B70 also confirmed by lspci on the hardware.",
   "devices": [
     {
       "id": "arc-b580",
@@ -136,22 +136,25 @@
       "xmx_int8": {"unit": "xmx_engines", "ops_per_clk": 512}
     }
   },
-  "_framework_factors_comment": "Roofline efficiency knobs. MFU = Model FLOP Utilization (compute roof, prefill). BWE = Bandwidth Efficiency (memory roof, decode). Ranges are community-typical for the named runtime, not measurements from any specific stack. Width reflects 'maturing kernel coverage' as the lower bound and 'well-tuned kernel' as the upper. The skill emits a band, not a point estimate. Use scripts/calibrate.py to anchor these to your specific (image, device) combination — it overrides the band for that run.",
+  "_framework_factors_comment": "Roofline efficiency knobs. MFU = Model FLOP Utilization (compute roof, prefill). BWE = Bandwidth Efficiency (memory roof, decode). Ranges are community-typical for the named runtime, not measurements from any specific stack. Width reflects 'maturing kernel coverage' as the lower bound and 'well-tuned kernel' as the upper. The skill emits a band, not a point estimate. Use scripts/calibrate.py to anchor these to your specific (image, device) combination — it overrides the band for that run. mfu_by_tier gives a compute tier its own band. The xmx_bf16 bands are a stop-gap: they are the old bands divided by 4, because BF16 prefill used to be modelled on the vector FP16 peak, which is a quarter of the XMX BF16 peak, so they reproduce the BF16 and FP8 predictions made before the change. Replace them with bands from a calibrate.py run once one exists; calibrate.py already measures against the XMX BF16 peak.",
   "framework_factors": {
-    "vllm-xpu":   {"mfu_min": 0.30, "mfu_max": 0.65, "bwe_min": 0.40, "bwe_max": 0.65},
-    "sglang-xpu": {"mfu_min": 0.30, "mfu_max": 0.65, "bwe_min": 0.30, "bwe_max": 0.85},
-    "torch-xpu":  {"mfu_min": 0.20, "mfu_max": 0.55, "bwe_min": 0.25, "bwe_max": 0.75}
+    "vllm-xpu":   {"mfu_min": 0.30, "mfu_max": 0.65, "bwe_min": 0.40, "bwe_max": 0.65,
+                  "mfu_by_tier": {"xmx_bf16": {"mfu_min": 0.075, "mfu_max": 0.1625}}},
+    "sglang-xpu": {"mfu_min": 0.30, "mfu_max": 0.65, "bwe_min": 0.30, "bwe_max": 0.85,
+                  "mfu_by_tier": {"xmx_bf16": {"mfu_min": 0.075, "mfu_max": 0.1625}}},
+    "torch-xpu":  {"mfu_min": 0.20, "mfu_max": 0.55, "bwe_min": 0.25, "bwe_max": 0.75,
+                  "mfu_by_tier": {"xmx_bf16": {"mfu_min": 0.05, "mfu_max": 0.1375}}}
   },
-  "_quant_comment": "Bytes per parameter and which compute tier each quant routes to on Xe2 XMX. W4A8 (awq/gptq/auto-round/inc) uses the INT8 DPAS tier because activations are int8. Plain FP8 weights stay on the FP16/BF16 tier — Battlemage XMX has no native FP8 matmul DPAS, so kernels dequantize FP8 → BF16 before the matmul. FP8 still saves memory bytes (1.0 vs 2.0 per weight) but does not get the int8-tier compute speedup.",
+  "_quant_comment": "Bytes per parameter and which arch_rates compute tier each quant routes to on Xe2 XMX. W4A8 (awq/gptq/auto-round/inc) uses the INT8 DPAS tier because activations are int8. Plain FP8 weights stay on the FP16/BF16 tier — Battlemage XMX has no native FP8 matmul DPAS, so kernels dequantize FP8 → BF16 before the matmul. FP8 still saves memory bytes (1.0 vs 2.0 per weight) but does not get the int8-tier compute speedup.",
   "quants": {
-    "bf16":     {"bytes_per_param": 2.00, "compute_tier": "fp16_bf16_tflops", "compute_unit": "tflops"},
-    "fp16":     {"bytes_per_param": 2.00, "compute_tier": "fp16_bf16_tflops", "compute_unit": "tflops"},
-    "fp8":      {"bytes_per_param": 1.00, "compute_tier": "fp16_bf16_tflops", "compute_unit": "tflops"},
-    "int8":     {"bytes_per_param": 1.00, "compute_tier": "int8_tops",        "compute_unit": "tops"},
-    "awq":      {"bytes_per_param": 0.55, "compute_tier": "int8_tops",        "compute_unit": "tops"},
-    "gptq":     {"bytes_per_param": 0.55, "compute_tier": "int8_tops",        "compute_unit": "tops"},
-    "auto-round": {"bytes_per_param": 0.55, "compute_tier": "int8_tops",      "compute_unit": "tops"},
-    "inc":      {"bytes_per_param": 0.55, "compute_tier": "int8_tops",        "compute_unit": "tops"},
-    "mxfp4":    {"bytes_per_param": 0.55, "compute_tier": "int8_tops",        "compute_unit": "tops"}
+    "bf16":     {"bytes_per_param": 2.00, "compute_tier": "xmx_bf16",        "compute_unit": "tflops"},
+    "fp16":     {"bytes_per_param": 2.00, "compute_tier": "xmx_bf16",        "compute_unit": "tflops"},
+    "fp8":      {"bytes_per_param": 1.00, "compute_tier": "xmx_bf16",        "compute_unit": "tflops"},
+    "int8":     {"bytes_per_param": 1.00, "compute_tier": "xmx_int8",        "compute_unit": "tops"},
+    "awq":      {"bytes_per_param": 0.55, "compute_tier": "xmx_int8",        "compute_unit": "tops"},
+    "gptq":     {"bytes_per_param": 0.55, "compute_tier": "xmx_int8",        "compute_unit": "tops"},
+    "auto-round": {"bytes_per_param": 0.55, "compute_tier": "xmx_int8",      "compute_unit": "tops"},
+    "inc":      {"bytes_per_param": 0.55, "compute_tier": "xmx_int8",        "compute_unit": "tops"},
+    "mxfp4":    {"bytes_per_param": 0.55, "compute_tier": "xmx_int8",        "compute_unit": "tops"}
   }
 }

@@ -397,7 +397,7 @@ def rank_candidates(d: ModelDims, params: int, ctx: int, concurrency: int,
                 "kv_bytes_per_token": kv_per_tok,
                 "context_tokens": ctx,
                 "include_kv": True,
-                "peak_ops_per_s": peak_ops_s(device, qmeta),
+                "peak_ops_per_s": peak_ops_s(device, qmeta, HW["arch_rates"]),
                 "bandwidth_bytes_per_s": device["memory_bandwidth_gbs"] * 1e9,
                 "factors": factors,
             }
