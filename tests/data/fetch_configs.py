@@ -108,6 +108,8 @@ def fetch_and_save_configs():
             try:
                 os.unlink(tmp)
             except OSError:
+                # Best-effort cleanup: the temp file may never have been
+                # created, and the write error is reported just below.
                 pass
             print(f"FAILED (could not write {path}: {e})")
             errors += 1

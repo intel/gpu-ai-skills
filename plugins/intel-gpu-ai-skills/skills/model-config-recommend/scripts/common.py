@@ -988,7 +988,6 @@ def _recurrent_block_params(dims: ModelDims) -> int:
         x_proj = inner * (rank + 2 * dims.state_head_dim_k)
         dt_proj = rank * inner + inner
         scalars = inner * dims.state_head_dim_k + inner
-        gate_norm = 0
         return in_proj + conv + out_proj + x_proj + dt_proj + scalars
     return in_proj + conv + out_proj + scalars + gate_norm
 
