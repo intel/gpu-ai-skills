@@ -117,6 +117,9 @@ def main() -> int:
     # children, and a wedged rank would block it forever — which leaves the
     # probe container "Up" indefinitely holding the GPUs.
     os._exit(3)
+    # Unreachable; makes the no-return exit explicit to static analysis, which
+    # does not model os._exit() as NoReturn and would infer `return None`.
+    raise AssertionError("unreachable: os._exit() does not return")
 
 
 if __name__ == "__main__":

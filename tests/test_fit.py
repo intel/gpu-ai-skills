@@ -84,8 +84,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / 'data'))
 
 import fit
 from fit import fetch_config as fetch_config_live, parse_dims, count_params, kv_bytes, estimate
-from model_revisions import (CACHE_DIR, MEASUREMENT_DATE, MODEL_REVISIONS, cache_path,
-                             revision_for)
+from model_revisions import MODEL_REVISIONS, cache_path, revision_for
 
 GB = 1024 ** 3
 
@@ -121,19 +120,27 @@ def _write_cache(path, cfg):
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix='.tmp')
+        replaced = False
         try:
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(cfg, f, indent=2, sort_keys=True)
             os.replace(tmp, path)
-        except BaseException:
+            replaced = True
+        finally:
             # Do not leave the temp file behind on any exit path, including
-            # KeyboardInterrupt.
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+            # KeyboardInterrupt. finally rather than `except BaseException:
+            # ... raise` -- same behaviour, and nothing is caught at all.
+            if not replaced:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    # Best-effort cleanup: the temp file may already be gone,
+                    # and the exception propagating from above must not be
+                    # masked.
+                    pass
     except OSError:
+        # A cache write failure is not a test failure (see docstring): the
+        # config is already in hand, so the run continues uncached.
         pass
 
 
@@ -158,6 +165,8 @@ def _load_config(model_id):
             try:
                 path.unlink()
             except OSError:
+                # Already gone (e.g. a parallel run removed it): the goal of
+                # dropping the bad entry is met, so carry on to the re-fetch.
                 pass
 
     if OFFLINE:
