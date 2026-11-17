@@ -22,6 +22,12 @@ A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-a
 
 Format follows the [Agent Skills specification](https://agentskills.io/specification).
 
+**How it works.** [Install the skills](#installing), then ask your AI assistant in plain English. The five steps below match the tables in [Skills](#skills).
+
+<p align="center">
+  <img src="assets/readme/how-it-works.svg" width="560" alt="How to use these skills: bring an Intel dGPU instance, Ubuntu and an AI assistant, then ask in five steps: get ready, check the fit, run, measure, find slowdowns.">
+</p>
+
 ## Skills
 
 
