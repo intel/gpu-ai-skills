@@ -65,13 +65,17 @@ One stanza per Intel GPU. Key fields:
   rather than the marketing name; driver quirk, not a problem.
   Map the PCI device ID in brackets to the product SKU:
 
-  | PCI device ID | Product SKU | Confirmed |
-  |---|---|---|
-  | `0xe20b` | Arc B580 | yes (lspci on hardware) |
-  | `0xe211` | Arc Pro B60 | yes (lspci on hardware) |
-  | `0xe220` | Arc Pro B50 | yes (pci.ids) |
-  | `0xe221` | Arc Pro B65 | yes (pci.ids) |
-  | `0xe223` | Arc Pro B70 | yes (lspci on hardware) |
+  | PCI device ID | Product SKU | Die | Confirmed by |
+  |---|---|---|---|
+  | `0xe20b` | Arc B580 | G21 | Intel spec page, pci.ids, lspci on hardware |
+  | `0xe20c` | Arc B570 | G21 | pci.ids |
+  | `0xe211` | Arc Pro B60 | G21 | Intel spec page, pci.ids, lspci on hardware |
+  | `0xe212` | Arc Pro B50 | G21 | Intel spec page, pci.ids |
+  | `0xe222` | Arc Pro B65 | G31 | Intel spec page, pci.ids |
+  | `0xe223` | Arc Pro B70 | G31 | Intel spec page, pci.ids, lspci on hardware |
+
+  Report an ID missing from this table as unknown rather than guessing
+  a SKU.
 
   Full table provided above. Cross-check with `lspci -d 8086: -nn` (prints `[8086:XXXX]`). 
 

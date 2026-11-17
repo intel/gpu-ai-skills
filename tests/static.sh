@@ -173,6 +173,11 @@ if tests/model-fit.sh; then
 else
     err "tests/model-fit.sh failed"
 fi
+if tests/hardware-table.sh; then
+    ok "tests/hardware-table.sh"
+else
+    err "tests/hardware-table.sh failed"
+fi
 if tests/vllm-omni-xpu-run.sh; then
     ok "tests/vllm-omni-xpu-run.sh"
 else

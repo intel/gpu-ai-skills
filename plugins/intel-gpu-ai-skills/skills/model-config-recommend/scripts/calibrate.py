@@ -32,6 +32,7 @@ import urllib.request
 from pathlib import Path
 
 from common import docker_image_id
+from roofline import CALIBRATION_PEAK_BASIS, factors_from_dict, peak_ops_s
 
 HERE = Path(__file__).resolve().parent.parent
 HW = json.loads((HERE / "data" / "hardware.json").read_text())
@@ -191,7 +192,8 @@ def derive_factors(measurement: dict, device: dict) -> dict:
     tpot_s = measurement["tpot_median_ms"] / 1000
 
     # MFU: TTFT = prompt / (peak * MFU / (2 * params)) → MFU = (prompt * 2 * params) / (TTFT * peak)
-    peak_flops = device["fp16_bf16_tflops"] * 1e12
+    # The reference bench is BF16, so MFU is a fraction of the BF16 XMX peak.
+    peak_flops = peak_ops_s(device, HW["quants"]["bf16"], HW["arch_rates"])
     mfu = (prompt * 2 * params) / (ttft_s * peak_flops)
     mfu = max(0.05, min(mfu, 0.95))
 
@@ -202,6 +204,7 @@ def derive_factors(measurement: dict, device: dict) -> dict:
     bwe = max(0.05, min(bwe, 0.99))
 
     return {"mfu_measured": mfu, "bwe_measured": bwe,
+            "peak_basis": CALIBRATION_PEAK_BASIS,
             "calibrated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "raw": measurement}
 
@@ -259,11 +262,12 @@ def main(argv: list[str] | None = None) -> int:
     cf.write_text(json.dumps(factors, indent=2))
     print()
     print(f"Calibration written to {cf}")
-    default = HW["framework_factors"]["vllm-xpu"]
+    default = factors_from_dict(HW["framework_factors"]["vllm-xpu"],
+                                HW["quants"]["bf16"]["compute_tier"])
     print(f"  measured MFU = {factors['mfu_measured']:.2f}  "
-          f"(table default range was {default['mfu_min']:.2f}-{default['mfu_max']:.2f})")
+          f"(table default range was {default.mfu_min:.2f}-{default.mfu_max:.2f})")
     print(f"  measured BWE = {factors['bwe_measured']:.2f}  "
-          f"(table default range was {default['bwe_min']:.2f}-{default['bwe_max']:.2f})")
+          f"(table default range was {default.bwe_min:.2f}-{default.bwe_max:.2f})")
     print()
     print("Run recommend.py with --use-calibration"
           + (" --enforce-eager" if args.enforce_eager else "")

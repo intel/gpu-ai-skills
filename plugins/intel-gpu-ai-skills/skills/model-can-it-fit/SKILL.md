@@ -82,9 +82,9 @@ confirmed.
 | SKU | PCI id | `--device-vram-gb` |
 |---|---|---|
 | Arc Pro B70 | `0xe223` | 32 |
-| Arc Pro B65 | `0xe221` | 32 |
+| Arc Pro B65 | `0xe222` | 32 |
 | Arc Pro B60 | `0xe211` | 24 |
-| Arc Pro B50 | `0xe220` | 16 |
+| Arc Pro B50 | `0xe212` | 16 |
 | Arc B580    | `0xe20b` | 12 |
 
 For **`--tp` greater than 1**, check every device in the intended set and

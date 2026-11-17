@@ -41,7 +41,8 @@ from common import (
     vllm_block_tokens,
     vllm_reservation,
 )
-from roofline import factors_from_dict, peak_ops_s, phase_roofline
+from roofline import (CALIBRATION_PEAK_BASIS, LEGACY_CALIBRATION_PEAK_BASIS,
+                      factors_from_dict, peak_ops_s, phase_roofline)
 
 GB = 1024 ** 3
 HERE = Path(__file__).resolve().parent.parent
@@ -356,7 +357,6 @@ def rank_candidates(d: ModelDims, params: int, ctx: int, concurrency: int,
                     device: dict, framework: str, available_variants: dict,
                     num_devices: int,
                     gpu_memory_utilization: float) -> list[Candidate]:
-    factors = factors_from_dict(HW["framework_factors"][framework])
     candidates = []
 
     # Order to prefer: safe fallback first, then memory-saving and quantized paths.
@@ -384,6 +384,8 @@ def rank_candidates(d: ModelDims, params: int, ctx: int, concurrency: int,
                 continue
 
             qmeta = HW["quants"][quant]
+            factors = factors_from_dict(HW["framework_factors"][framework],
+                                        qmeta["compute_tier"])
             # The roofline wants what a token reads, not what sits in memory:
             # on an MoE only the active experts, and never the vision tower.
             params_per_rank = active_params(d) / tp
@@ -395,7 +397,7 @@ def rank_candidates(d: ModelDims, params: int, ctx: int, concurrency: int,
                 "kv_bytes_per_token": kv_per_tok,
                 "context_tokens": ctx,
                 "include_kv": True,
-                "peak_ops_per_s": peak_ops_s(device, qmeta),
+                "peak_ops_per_s": peak_ops_s(device, qmeta, HW["arch_rates"]),
                 "bandwidth_bytes_per_s": device["memory_bandwidth_gbs"] * 1e9,
                 "factors": factors,
             }
@@ -886,8 +888,17 @@ def main(argv: list[str] | None = None) -> int:
             sys.exit(f"calibration cache {candidates[0]} is corrupt "
                      f"({type(exc).__name__}: {exc}). Delete it and re-run "
                      f"scripts/calibrate.py.")
+        basis = cal.get("peak_basis", LEGACY_CALIBRATION_PEAK_BASIS)
+        if basis != CALIBRATION_PEAK_BASIS:
+            sys.exit(f"calibration cache {candidates[0]} measured MFU against "
+                     f"the {basis} peak, but this hardware table models "
+                     f"prefill on {CALIBRATION_PEAK_BASIS}. Re-run "
+                     f"scripts/calibrate.py to measure against the current "
+                     f"peak.")
         f = HW["framework_factors"][args.runtime]
         f["mfu_min"] = f["mfu_max"] = mfu_measured
+        # The measurement replaces every tier's band, not just the default.
+        f.pop("mfu_by_tier", None)
         f["bwe_min"] = f["bwe_max"] = bwe_measured
         print(f"# Using calibration from {candidates[0].name}: "
               f"MFU={mfu_measured:.2f} BWE={bwe_measured:.2f}")
