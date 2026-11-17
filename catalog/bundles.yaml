@@ -38,7 +38,7 @@ profile:
   - xpu-profile-unitrace
 
 monitor:
-  - enable-xpu-monitoring
+  - enable-full-system-monitoring
 
 migrate:
   - cuda-to-xpu-migration
