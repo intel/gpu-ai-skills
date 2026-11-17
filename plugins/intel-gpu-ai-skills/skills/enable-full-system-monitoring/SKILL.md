@@ -1,14 +1,14 @@
 ---
-name: enable-xpu-monitoring
-description: Deploy a Prometheus + Grafana + XPU Manager monitoring stack on an Intel GPU host using the intel/xe-full-stack-monitoring repo (plain Docker Compose). Brings up containers for real-time GPU, CPU, and vLLM metrics collection and visualization. Use when the user wants to monitor XPU utilization, temperature, power, memory, or vLLM inference performance.
+name: enable-full-system-monitoring
+description: Deploy a Prometheus + Grafana + XPU Manager monitoring stack on an Intel GPU host using the intel/full-system-monitoring repo (plain Docker Compose). Brings up containers for real-time GPU, CPU, and vLLM metrics collection and visualization. Use when the user wants to monitor XPU utilization, temperature, power, memory, or vLLM inference performance.
 ---
 
-# enable-xpu-monitoring
+# enable-full-system-monitoring
 
 Deploy a single-node monitoring stack on an Intel GPU host from
-[intel/xe-full-stack-monitoring](https://github.com/intel/xe-full-stack-monitoring).
+[intel/full-system-monitoring](https://github.com/intel/full-system-monitoring).
 The stack is **pure Docker Compose** — no CLI, no Python package, no tarball.
-That repo's [`AGENT.md`](https://github.com/intel/xe-full-stack-monitoring/blob/main/AGENT.md)
+That repo's [`AGENT.md`](https://github.com/intel/full-system-monitoring/blob/main/AGENT.md)
 is the source of truth; this skill gives the short path and defers detail to it.
 
 ## What gets deployed
@@ -69,19 +69,19 @@ If that prints `Existing stack in ...`, skip the clone and go to Step 3.
 Otherwise:
 
 ```sh
-git clone https://github.com/intel/xe-full-stack-monitoring.git
-cd xe-full-stack-monitoring
+git clone https://github.com/intel/full-system-monitoring.git
+cd full-system-monitoring
 ```
 
 If `git clone` fails or hangs (no internet or proxy on the host), copy the repo
 from the user's laptop instead. Run on the laptop:
 
 ```sh
-git clone https://github.com/intel/xe-full-stack-monitoring.git
-scp -r xe-full-stack-monitoring <ssh-host-alias>:~/
+git clone https://github.com/intel/full-system-monitoring.git
+scp -r full-system-monitoring <ssh-host-alias>:~/
 ```
 
-Then on the host: `cd ~/xe-full-stack-monitoring`.
+Then on the host: `cd ~/full-system-monitoring`.
 
 Run every `docker compose` command below from this repo root (volume paths are relative).
 
@@ -177,7 +177,7 @@ Tell the user: Grafana is at **http://localhost:<GRAFANA_PORT>** (no login), how
 xpumd found, and which targets are up. Repeat which vLLM ports are monitored
 (8000–8008, plus any added in Step 6). If Grafana was moved off 3000, say so again here.
 Name the source: the stack is
-[intel/xe-full-stack-monitoring](https://github.com/intel/xe-full-stack-monitoring),
+[intel/full-system-monitoring](https://github.com/intel/full-system-monitoring),
 deployed from `<repo path>`. Say this even when Step 2 reused a running stack.
 
 Services listen on localhost only, so a remote user needs an SSH tunnel. **Always
