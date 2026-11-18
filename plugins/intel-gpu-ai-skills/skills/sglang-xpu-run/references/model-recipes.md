@@ -22,16 +22,16 @@ The Mamba state then uses the `no_buffer` strategy, which requires
 | `+ --mamba-radix-cache-strategy extra_buffer` | `extra_buffer is not supported for Qwen3_5ForConditionalGeneration; use no_buffer.` |
 
 **2. Add `--linear-attn-backend intel_xpu`.** It is not the default: without
-it the linear layers resolve to `triton`, and the first request spends over a
-minute in JIT compilation. The Cookbook's BMG command for Qwen3.5 adds it too.
+it the linear layers resolve to `triton`, and JIT compilation makes the first
+request ~12× slower than with it. The Cookbook's BMG command for Qwen3.5 adds it too.
 
 Two working configurations, both serving validated output:
 
-| Qwen3.5-4B, `--tp 1`, measured here | first request | 256 tok, warm |
+| Qwen3.5-4B, `--tp 1`, measured here (time relative to the last row) | first request | 256 tok, warm |
 |---|---|---|
-| no attention flag (→ `triton`, page 1), default linear backend (→ `triton`) | **82 s** | 7.0 s |
-| Cookbook shape: no attention flag + `--linear-attn-backend intel_xpu` | 21 s | 6.4 s |
-| `--attention-backend intel_xpu --linear-attn-backend intel_xpu --disable-radix-cache --page-size 64` | **7 s** | 5.4 s |
+| no attention flag (→ `triton`, page 1), default linear backend (→ `triton`) | **~12×** | 1.3× |
+| Cookbook shape: no attention flag + `--linear-attn-backend intel_xpu` | 3× | 1.2× |
+| `--attention-backend intel_xpu --linear-attn-backend intel_xpu --disable-radix-cache --page-size 64` | **1.0×** | 1.0× |
 
 ```sh
 python3 -m sglang.launch_server --model Qwen/Qwen3.5-4B --device xpu --tp 1 \
@@ -99,7 +99,7 @@ use (next section). Rows needing 3+ cards were not run on this 2-card host.
 **Container wrapper**: the SKILL.md Multi-GPU launch, with
 `-e ZE_AFFINITY_MASK=0,1,2,3` (or `0,…,7`) and `-e FI_TCP_IFACE=lo` — the
 all-reduce hang in `multi-gpu-tp.md` does not depend on the model. Raise the
-verify block's 120 s readiness cap for these weight sizes, then run the verify
+verify block's readiness cap for these weight sizes, then run the verify
 block before trusting the server.
 
 **XPU graphs (Qwen3 rows)**: the Cookbook warns that
@@ -107,8 +107,8 @@ block before trusting the server.
 produce corrupted output on older images and need one built with oneAPI
 2026.1.3. The pinned image ships that bundle
 (`intel-deep-learning-essentials 2026.1.3`). Measured here with both flags on
-Qwen3-0.6B, `--tp 1`: 32 concurrent requests all valid, 256 tokens in 1.0 s vs
-2.2 s without graphs.
+Qwen3-0.6B, `--tp 1`: 32 concurrent requests all valid, and decode ~2.2×
+faster than without graphs.
 
 ## Translating an SGLang Cookbook BMG command
 
@@ -121,10 +121,10 @@ option (`arc_b` in the page source); the intro page lists no Intel hardware.
   resolves to `triton` with `page_size 1`. Single-stream decode is about the
   same, but under load it is much slower (measured here):
 
-  | Llama-3.1-8B-Instruct, `--tp 1` | first request | 256 tok | 32 concurrent × 128 tok |
+  | Llama-3.1-8B-Instruct, `--tp 1` (time relative to skill flags) | first request | 256 tok | 32 concurrent × 128 tok |
   |---|---|---|---|
-  | Cookbook (`triton`, page 1) | 15 s | 7.3 s | 13.9 s |
-  | skill flags (`intel_xpu`, page 64) | 3 s | 7.4 s | 5.0 s |
+  | Cookbook (`triton`, page 1) | **5×** | 1.0× | **2.8×** |
+  | skill flags (`intel_xpu`, page 64) | 1.0× | 1.0× | 1.0× |
 
 - **No container shape and no `FI_TCP_IFACE=lo`.**
 - **`sglang serve --model-path`** is equivalent to `python3 -m
