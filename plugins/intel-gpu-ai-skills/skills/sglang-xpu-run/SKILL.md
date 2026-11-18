@@ -67,7 +67,7 @@ NEW=$( { curl -fsS --max-time 10 \
 
 `sort -V` is a version sort, the grep drops non-release tags, and an
 unreachable registry prints no note. Everything below is **validated at
-`v0.5.23-xpu`** on Arc Pro B70. **If the note fires, do not
+`v0.5.23-xpu`** (2× Arc Pro B70, 2026-11-16). **If the note fires, do not
 silently switch.** To evaluate a newer tag: set `IMG`, check the pinned UMD
 against the host first (`xpu count: 0` under Common errors — the likeliest
 break), then serve flags and the quant table, then re-run the verify block.
@@ -134,8 +134,8 @@ docker run -d --name sglang-xpu \
 
 <a id="verify-block"></a>Run this **exactly once** after any launch, **in the
 foreground**. It reads `NAME`/`PORT`/`MODEL` from the shell (quickstart
-defaults otherwise), is bounded on every path (~30 s on a healthy server), and
-does readiness, warmup and the content-validated smoke test in one round trip.
+defaults otherwise), is bounded on every path, and does readiness, warmup and
+the content-validated smoke test in one round trip.
 Backgrounding it only moves the proof — the printed `content:` line — out of
 your transcript.
 
@@ -185,10 +185,9 @@ print('SMOKE TEST PASS')
 "
 ```
 
-Measured (Arc Pro B70, warm cache, Qwen3-0.6B): ready in ~27 s at `--tp 1`
-and `--tp 2`; raise the 120 s cap for large weights or a cold
-cache. `MODEL` must equal the `id` in `/v1/models` — the value you passed to
-`--model`.
+Readiness takes the same time at `--tp 1` and `--tp 2` (Qwen3-0.6B, warm
+cache); raise the readiness cap for large weights or a cold cache. `MODEL`
+must equal the `id` in `/v1/models` — the value you passed to `--model`.
 
 Cleanup: `docker stop sglang-xpu && docker rm sglang-xpu` — if it died, read
 `docker logs sglang-xpu` first, since `rm` discards the log for good.
@@ -200,8 +199,8 @@ Without it oneCCL's TCP fallback can bind an interface the ranks never reach,
 so the server reports *ready* and the **first request never returns**
 (re-tested on the pinned tag). Loopback is always right for ranks on one
 machine and inert on single GPU. Only exception: `--nnodes > 1` — pin the NIC
-the nodes share instead. If a TP launch still hangs, isolate the collective in
-~20 s with `scripts/tp_collective_probe.py`; root cause, probe verdicts, and
+the nodes share instead. If a TP launch still hangs, isolate the collective with
+`scripts/tp_collective_probe.py` (it bounds itself); root cause, probe verdicts, and
 what does not fix it: `references/multi-gpu-tp.md`.
 
 First discover available XPUs and validate the requested TP degree:
@@ -356,7 +355,7 @@ Less common (`xpu count: 0` under `--user`, `onecclCommInitRank … code 11`,
 | `HF_TOKEN` | HF auth for gated models downloaded inside the container. |
 
 Kernel-cache persistence (`TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR`;
-Qwen3.5 first request 78 s → 21 s on restart), `HF_HUB_OFFLINE` and the
+Qwen3.5's first request ~3.8× faster on restart), `HF_HUB_OFFLINE` and the
 spec-decode context override: `references/image-and-troubleshooting.md`.
 
 ## What this skill does NOT cover
