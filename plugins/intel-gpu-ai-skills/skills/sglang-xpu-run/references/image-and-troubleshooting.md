@@ -1,7 +1,7 @@
 # Image contents, XPU pre-flight, container flags, less common errors, env vars
 
-Detail moved out of SKILL.md so the body stays small. Everything here is
-for `lmsysorg/sglang:v0.5.23-xpu` on Arc Pro B70 unless a line says
+Everything here is
+for `lmsysorg/sglang:v0.5.23-xpu` / Arc Pro B70 unless a line says
 otherwise.
 `$IMG` and `$RENDER_GID` are the values from SKILL.md Steps 0–1.
 
@@ -97,11 +97,11 @@ conflict, HTTP 200 with garbage) are in SKILL.md.
   same code for `FI_TCP_IFACE=docker0`, `CCL_ZE_ENABLE=0` and
   `FI_PROVIDER=shm` (`multi-gpu-tp.md`).
 - A very slow first request on a server that reported ready is JIT
-  compilation, not a hang: measured 82 s for Qwen3.5-4B with the default
-  `triton` linear-attention backend and 15 s for Llama-3.1-8B on `triton`
-  attention (3 s on `intel_xpu`). The verify block's warmup absorbs it.
+  compilation, not a hang: ~12× the `intel_xpu` time for Qwen3.5-4B on the
+  default `triton` linear-attention backend, ~5× for Llama-3.1-8B on `triton`
+  attention. The verify block's warmup absorbs it.
 - `429 Too Many Requests` pulling the image → Docker Hub rate-limiting
-  anonymous pulls. `docker login` for higher limits, or retry after 60 s.
+  anonymous pulls. `docker login` for higher limits, or retry later.
 - `/v1/responses` returns HTTP 500 (`AttributeError: 'State' object has no
   attribute 'openai_serving_responses'`) and startup logs `OpenAI Responses API
   (/v1/responses) disabled: … cannot import name 'ResponseFunctionShellToolCall'`.
@@ -119,7 +119,7 @@ conflict, HTTP 200 with garbage) are in SKILL.md.
 |---|---|
 | `ZE_AFFINITY_MASK` | Which XPU(s) the server sees (`0`, `0,1`, …). Must expose exactly `--tp` devices. |
 | `FI_TCP_IFACE=lo` | **Set for every `--tp > 1` launch on one host.** Pins libfabric (oneCCL's OFI transport) to loopback; without it the TP all-reduce can bind an unreachable interface and the first request hangs forever. Wrong only for `--nnodes > 1` — pin the shared NIC there. |
-| `TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR` | Persist compiled kernels across runs: point both into a mounted host volume (`-v /path/kcache:/kcache -e TRITON_CACHE_DIR=/kcache/triton -e TORCHINDUCTOR_CACHE_DIR=/kcache/inductor`). Measured: Qwen3.5-4B with the default `triton` linear backend, first request 78 s on a cold cache, 21 s on the next start. The container writes the files as root, so clean the volume up from a container. |
+| `TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR` | Persist compiled kernels across runs: point both into a mounted host volume (`-v /path/kcache:/kcache -e TRITON_CACHE_DIR=/kcache/triton -e TORCHINDUCTOR_CACHE_DIR=/kcache/inductor`). Measured: Qwen3.5-4B with the default `triton` linear backend, first request ~3.8× faster on the next start than on a cold cache. The container writes the files as root, so clean the volume up from a container. |
 | `SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1` | Needed by the EAGLE/EAGLE3 drafts whose config declares a shorter context than the target (`spec-decode-and-multimodal.md`). |
 | `HF_TOKEN` | HF auth when downloading inside the container. |
 | `HF_HUB_OFFLINE=1` | Serve only from the mounted cache; a missing file then fails fast instead of waiting on the network. |
