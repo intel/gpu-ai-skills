@@ -1,7 +1,8 @@
 # Image contents, XPU pre-flight, container flags, less common errors, env vars
 
-Detail moved out of SKILL.md so the body stays small. Everything here is for
-`lmsysorg/sglang:v0.5.22-xpu` on Arc Pro B70 unless a line says otherwise.
+Everything here is
+for `lmsysorg/sglang:v0.5.23-xpu` / Arc Pro B70 unless a line says
+otherwise.
 `$IMG` and `$RENDER_GID` are the values from SKILL.md Steps 0–1.
 
 ## What the release image already contains
@@ -16,10 +17,9 @@ Nothing needs wrapping around `python3 -m sglang.launch_server`:
   `--entrypoint` is unnecessary and `/root/.cache/huggingface` is the Hub cache
   path sglang reads.
 - Level Zero UMD pinned + `apt-mark hold`-ed: compute-runtime `26.27.39122.11`,
-  IGC `2.38.2`, gmmlib `22.10.0`; `torch 2.14.0+xpu`, `sglang-kernel-xpu 0.4.0`,
-  `triton-xpu 3.8.0`. Each release bumps these (v0.5.21 pinned compute-runtime
-  `26.18.38308.1`, IGC `2.34.4`, torch `2.13.0+xpu`) — read them off the image
-  you actually resolved:
+  IGC `2.38.2`, gmmlib `22.10.0`; `torch 2.14.0+xpu`, `sglang-kernel-xpu 0.5.0`,
+  `triton-xpu 3.8.0`, oneAPI `2026.1`. A release can bump any of these — read
+  them off the image you actually resolved:
 
   ```sh
   # ^(ii|hi): the image apt-mark-holds these, so dpkg shows "hi", not "ii"
@@ -61,23 +61,20 @@ mounted. Expected on the verified host: `xpu count: 1`,
 ## Why each container flag, in full
 
 - `--device /dev/dri` + `-v /dev/dri/by-path:/dev/dri/by-path` — Intel has no
-  `--gpus` flag; you pass the DRM nodes directly, and Level Zero discovers
-  devices through the `/by-path` symlinks. Without the bind mount some images
-  report no XPU.
+  `--gpus` flag; you pass the DRM nodes directly. Without the `/by-path` mount
+  the pre-flight still finds one card, but a `--tp 2` server reports ready and
+  its first request fails with `onecclCommInitRank failed with code 11` —
+  oneCCL needs the symlinks. Keep both.
 - `--group-add "$RENDER_GID"` — `/dev/dri/renderD*` is mode 660 owned by the
   `render` group. This image runs as root, which bypasses the group check, so
   the flag is not strictly required here — keep it anyway: it is what makes the
-  same command work if you add `--user`, and upstream CI adds both the `video`
-  and `render` GIDs.
-- **`--privileged` is not required.** Earlier non-root sglang images needed it
-  on Battlemage; the pinned-UMD release image does not (verified on Arc Pro
-  B70). Only reach for it if `zeInit` fails with a permission error that
-  `--group-add` doesn't fix.
+  same command work if you add `--user` (verified: `--user 1000:1000` alone
+  gives `xpu count: 0`; adding `--group-add "$RENDER_GID"` gives 1).
+- **`--privileged` is not required** — every run in this skill used none.
 - `--network host` — simplifies port handling (sglang uses 30000 + internal RPC
   ports). Swapping it for `-p 30000:30000` also sidesteps the multi-GPU
   interface trap (`multi-gpu-tp.md`); bridge mode was verified unaffected.
-- `--shm-size=16g` (or `--ipc=host`) — sglang's scheduler uses shared memory
-  more aggressively than vLLM. Default Docker shm is too small.
+- `--shm-size=16g` / `--ipc=host` — every run in this skill used both.
 - `-v "$HOME/.cache/huggingface:/root/.cache/huggingface"` — reuse the host Hub
   cache. The container is root, so `/root/.cache/huggingface` is the path
   sglang reads.
@@ -90,22 +87,31 @@ mounted. Expected on the verified host: `xpu count: 1`,
 The four common ones (UMD mismatch, benign startup lines, container-name
 conflict, HTTP 200 with garbage) are in SKILL.md.
 
-- `EACCES` on `/dev/dri/renderD*` → you added `--user`; add
-  `--group-add "$(getent group render | cut -d: -f3)"`.
-- Segfault inside `libsycl` when a cached kernel is reloaded → set
-  `SYCL_CACHE_PERSISTENT=0` (what upstream CI does on this runtime).
-- `triton.compiler.errors.CompilationError` on first request → cold Triton
-  cache. Mount `TRITON_CACHE_DIR` to a host volume.
-- `RuntimeError: NCCL` → sglang prints "NCCL" on the XPU path; the actual
-  backend is oneCCL. Usually a `--tp` / `ZE_AFFINITY_MASK` mismatch.
-- Server hangs at "Compiling kernel" → cold kernel cache on first run. Watch
-  `xpu-smi dump -d 0 -m 18 -i 1` — high power = compiling, not stuck. Persist
-  the cache for next run (env vars below).
+- `xpu count: 0` after adding `--user` → the non-root user is not in the
+  `render` group; add `--group-add "$(getent group render | cut -d: -f3)"`.
+- `RuntimeError: xccl: onecclCommInitRank failed with code 11` on the first
+  TP request → oneCCL could not set up its communicator. Two causes seen:
+  the `/dev/dri/by-path` mount is missing (add it), or `--mem-fraction-static`
+  left no device memory for it (Gemma-4-26B at 0.9 on 2× 32 GB; 0.85 works) —
+  lower the fraction. The collective probe shows the
+  same code for `FI_TCP_IFACE=docker0`, `CCL_ZE_ENABLE=0` and
+  `FI_PROVIDER=shm` (`multi-gpu-tp.md`).
+- A very slow first request on a server that reported ready is JIT
+  compilation, not a hang: ~12× the `intel_xpu` time for Qwen3.5-4B on the
+  default `triton` linear-attention backend, ~5× for Llama-3.1-8B on `triton`
+  attention. The verify block's warmup absorbs it.
 - `429 Too Many Requests` pulling the image → Docker Hub rate-limiting
-  anonymous pulls. `docker login` for higher limits, or retry after 60 s.
-- Multimodal models on older tags printed ~90 lines of benign
-  `OSError: libavutil.so.NN` tracebacks from `torchcodec` probing FFmpeg; gone
-  at v0.5.22. Harmless if seen on an older image.
+  anonymous pulls. `docker login` for higher limits, or retry later.
+- `/v1/responses` returns HTTP 500 (`AttributeError: 'State' object has no
+  attribute 'openai_serving_responses'`) and startup logs `OpenAI Responses API
+  (/v1/responses) disabled: … cannot import name 'ResponseFunctionShellToolCall'`.
+  The image ships `openai 2.6.1` (`python/pyproject_xpu.toml`) while this
+  sglang's Responses code needs `2.8.0` (main `pyproject.toml`). Use
+  `/v1/chat/completions` or `/v1/completions`.
+- `RuntimeError: Unsupported head size for paged prefill attention: 80` on the
+  first request (e.g. `microsoft/phi-2`) → the `intel_xpu` paged kernels do not
+  cover that head size. Serve with `--attention-backend triton` (phi-2 then
+  answers correctly via `/v1/completions`; it has no chat template).
 
 ## Env vars, full table
 
@@ -113,13 +119,7 @@ conflict, HTTP 200 with garbage) are in SKILL.md.
 |---|---|
 | `ZE_AFFINITY_MASK` | Which XPU(s) the server sees (`0`, `0,1`, …). Must expose exactly `--tp` devices. |
 | `FI_TCP_IFACE=lo` | **Set for every `--tp > 1` launch on one host.** Pins libfabric (oneCCL's OFI transport) to loopback; without it the TP all-reduce can bind an unreachable interface and the first request hangs forever. Wrong only for `--nnodes > 1` — pin the shared NIC there. |
-| `ONEAPI_DEVICE_SELECTOR=level_zero:0` | Keep SYCL's device view consistent with the `ZE_AFFINITY_MASK`-filtered set. |
-| `TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR`, `NEO_CACHE_DIR` + `NEO_CACHE_PERSISTENT=1` | Persist compiled kernels across runs (mount to a host volume). |
-| `SYCL_CACHE_PERSISTENT=0` | Disable the SYCL persistent kernel cache; upstream CI keeps it off to avoid a `libsycl` crash on reload. |
-| `SGLANG_SERVER_LAUNCH_TIMEOUT` | Raise for large MoE loads from a cold Hub cache (upstream CI uses 36000). |
+| `TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR` | Persist compiled kernels across runs: point both into a mounted host volume (`-v /path/kcache:/kcache -e TRITON_CACHE_DIR=/kcache/triton -e TORCHINDUCTOR_CACHE_DIR=/kcache/inductor`). Measured: Qwen3.5-4B with the default `triton` linear backend, first request ~3.8× faster on the next start than on a cold cache. The container writes the files as root, so clean the volume up from a container. |
 | `SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1` | Needed by the EAGLE/EAGLE3 drafts whose config declares a shorter context than the target (`spec-decode-and-multimodal.md`). |
-| `SYCL_UR_USE_LEVEL_ZERO_V2=0` | Force the L0 v1 adapter. Not needed with this image (device discovery verified without it); keep as a fallback if `zeInit`/enumeration misbehaves. |
 | `HF_TOKEN` | HF auth when downloading inside the container. |
 | `HF_HUB_OFFLINE=1` | Serve only from the mounted cache; a missing file then fails fast instead of waiting on the network. |
-| `SGLANG_LOGGING_LEVEL=DEBUG` | Verbose engine logs. |
-| `ALL_PROXY` / `all_proxy` | Unset if set to `socks://` — the `hf` CLI doesn't support SOCKS. |
