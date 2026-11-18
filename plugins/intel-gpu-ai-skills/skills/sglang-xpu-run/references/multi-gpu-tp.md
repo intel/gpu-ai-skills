@@ -5,7 +5,8 @@ Everything here is measured on `v0.5.23-xpu` / 2× Arc Pro B70.
 ## Symptom
 
 `--tp 2` starts normally: weights load, KV cache allocates on both cards,
-`Application startup complete`, `/v1/models` answers in ~28 s. The **first
+`Application startup complete`, `/v1/models` answers as fast as on a healthy
+server. The **first
 inference request then never returns** — no HTTP error, no crash, no
 watchdog. The server stays up indefinitely.
 
@@ -20,7 +21,7 @@ verified host:
 
 | Concern | Finding |
 |---|---|
-| Throughput cost vs. a working real NIC | none: TP=2, 8 concurrent × 64 tokens — `lo` 2.5 s, `eno3np0` 2.9 s wall (loopback skips the NIC) |
+| Throughput cost vs. a working real NIC | none: TP=2, 8 concurrent × 64 tokens — `eno3np0` took ~15% longer than `lo` (loopback skips the NIC) |
 | Single-GPU launches | inert — no collectives run |
 | **`--nnodes > 1`** | **breaks it** — ranks on other hosts are unreachable over loopback. Pin the NIC the nodes share instead. |
 
@@ -31,7 +32,7 @@ called out explicitly in the Multi-GPU section.
 
 If a TP launch hangs even with `FI_TCP_IFACE=lo` set, take the model out of
 the picture. `scripts/tp_collective_probe.py` does one 2-rank XPU all-reduce
-and bounds itself (20 s default), so run it in the foreground inside the
+and bounds itself, so run it in the foreground inside the
 serving image with the same network mode, `ZE_AFFINITY_MASK`, and env vars
 as the launch:
 
@@ -61,17 +62,17 @@ Measured probe verdicts on the verified host:
 
 | Probe configuration | Verdict |
 |---|---|
-| bridge networking, no env var | `COLLECTIVE OK` in 5 s |
+| bridge networking, no env var | `COLLECTIVE OK` |
 | `--network host`, no env var | `COLLECTIVE HUNG` (log ends at the `CCL_WARN` lines) |
-| `--network host`, `FI_TCP_IFACE=lo` | `COLLECTIVE OK` in 4 s |
+| `--network host`, `FI_TCP_IFACE=lo` | `COLLECTIVE OK` |
 
 Serving results with and without the pin, measured on 2× Arc Pro B70,
 Qwen3-0.6B:
 
-| | ready | first request | warm request |
-|---|---|---|---|
-| `--tp 2`, no `FI_TCP_IFACE` | ~28 s | **never returns** (hung >180 s) | — |
-| `--tp 2`, `FI_TCP_IFACE=lo` | ~27 s | ~5 s | under 1 s |
+| | ready | first request |
+|---|---|---|
+| `--tp 2`, no `FI_TCP_IFACE` | same as with the pin | **never returns** (still hung when the client timed out) |
+| `--tp 2`, `FI_TCP_IFACE=lo` | same as `--tp 1` | returns; several times slower than warm requests (one-time compilation) |
 
 **The hang is still present on the pinned tag** (`fi_info -p shm` is still
 empty in this image), so do not treat a newer tag as a reason to drop the
@@ -93,9 +94,10 @@ order:
 2. Run the probe (above) with the same network mode and mask. `COLLECTIVE
    HUNG` is this transport problem; `COLLECTIVE OK` means the hang is
    elsewhere — take the py-spy dump below, then retry at a lower `--tp`.
-3. Healthy numbers to compare against (Qwen3-0.6B, 2× B70): ready ~27 s,
-   first request ~5–6 s, under 1 s warm, and comparable memory on both cards
-   in `xpu-smi dump -m 18`. Garbage `content` with a fast response is a
+3. Healthy signs to compare against (Qwen3-0.6B, 2× B70): `--tp 2` becomes
+   ready about as fast as `--tp 1`, the first request is several times slower
+   than warm ones but returns, and both cards show comparable memory in
+   `xpu-smi dump -m 18`. Garbage `content` with a fast response is a
    `--tp` / `ZE_AFFINITY_MASK` mismatch rather than quantization.
 
 ## Root cause: host topology + a missing shared-memory provider
@@ -140,8 +142,8 @@ Probe = `scripts/tp_collective_probe.py` under `--network host`:
 | unset → libfabric picks `br-…` | probe **HUNG**; server's first request hangs |
 | `br-61d8f070a03c` | probe **HUNG** |
 | `docker0` | probe fails fast: `onecclCommInitRank failed with code 11` |
-| `eno3np0` (routable NIC) | probe OK in 5 s; server 8 × 64 tokens in 2.9 s ✅ |
-| `lo` | probe OK in 4 s; server first request ~5 s ✅ |
+| `eno3np0` (routable NIC) | probe OK; server serves (8 × 64 tokens ~15% slower than `lo`) ✅ |
+| `lo` | probe OK; server serves ✅ |
 
 So loopback is not magic — a real routable NIC works too. The failures are
 the bridge-type interfaces libfabric happens to rank first. `lo` is the
@@ -158,8 +160,8 @@ MPI.
 | `--tp 2`, Qwen3-0.6B | Network mode | `FI_TCP_IFACE` | Result |
 |---|---|---|---|
 | | `--network host` | unset | **hangs** at first request |
-| | `--network host` | `lo` | ready 27 s, request 5 s |
-| | bridge `-p 30099:30099` | unset | ready 27 s, request 5 s |
+| | `--network host` | `lo` | serves |
+| | bridge `-p 30099:30099` | unset | serves; readiness and first request match the row above |
 
 Two remedies, either is sufficient: pin `FI_TCP_IFACE=lo`, or use bridge
 networking so the container sees only its own `eth0` and `lo`.
@@ -222,17 +224,17 @@ python3 -m sglang.launch_server --model Qwen/Qwen3.5-4B --device xpu \
     --host 0.0.0.0 --port 30000      # docker run ... -e FI_TCP_IFACE=lo
 ```
 
-| `--tp 2`, Qwen3.5-4B | max total tokens | 256-token decode, warm |
+| `--tp 2`, Qwen3.5-4B | max total tokens | 256-token decode time, warm (relative) |
 |---|---|---|
-| without `--dcp-size` | 507,008 | 9.9 s |
-| `--dcp-size 2` (`a2a` comm, the XPU default) | 504,832 | 11.1 s |
-| `--dcp-size 2` + `--linear-attn-backend intel_xpu` | 504,832 | 10.3 s |
+| without `--dcp-size` | 507,008 | 1.00× |
+| `--dcp-size 2` (`a2a` comm, the XPU default) | 504,832 | 1.12× |
+| `--dcp-size 2` + `--linear-attn-backend intel_xpu` | 504,832 | 1.04× |
 
 Output is correct in all three, but on two cards **DCP bought no capacity
 and cost ~5–12% decode time**: it only grows the servable context when `tp_size` exceeds the
 model's KV-head count (otherwise TP already splits the KV heads), which on a
-2-card host means 1-KV-head models. The ~72 s first request is not DCP (same
+2-card host means 1-KV-head models. The slow first request is not DCP (same
 without it): it is the Triton JIT for Qwen3.5's linear-attention layers.
-`--linear-attn-backend intel_xpu` cuts it to ~10 s with DCP too (third row).
+`--linear-attn-backend intel_xpu` makes it ~7× faster with DCP too (third row).
 If startup fails with
 `UR_RESULT_ERROR_OUT_OF_RESOURCES`, lower `--mem-fraction-static`.
