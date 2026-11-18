@@ -11,7 +11,7 @@ silently falls back to CPU and you'll only notice when throughput is 50×
 lower than expected.
 
 **Choose SGLang for RadixAttention prefix caching or grammar-constrained
-output** — both v0.5.22-verified here (`#cached-token` reuse observed;
+output** — both verified here (`#cached-token` reuse observed;
 `json_schema` returns schema-valid JSON). For anything else prefer
 **vllm-xpu-run**, whose Intel model coverage is broader today.
 
@@ -52,7 +52,7 @@ every `docker run` command below.
 **Serve `$PIN`, the tag this pack validated.** The lookup below only reports a newer release; it does not switch to it automatically.
 
 ```sh
-PIN=v0.5.22-xpu                 # the only tag validated end-to-end by this pack
+PIN=v0.5.23-xpu                 # the only tag validated end-to-end by this pack
 IMG=lmsysorg/sglang:$PIN        # always serve the validated tag
 docker image inspect "$IMG" >/dev/null 2>&1 || docker pull "$IMG"   # ~36 GB
 echo "serving with $IMG"
@@ -67,7 +67,7 @@ NEW=$( { curl -fsS --max-time 10 \
 
 `sort -V` is a version sort, the grep drops non-release tags, and an
 unreachable registry prints no note. Everything below is **validated at
-`v0.5.22-xpu`** (2× Arc Pro B70, 2026-10-16). **If the note fires, do not
+`v0.5.23-xpu`** on Arc Pro B70. **If the note fires, do not
 silently switch.** To evaluate a newer tag: set `IMG`, check the pinned UMD
 against the host first (`xpu count: 0` under Common errors — the likeliest
 break), then serve flags and the quant table, then re-run the verify block.
@@ -76,32 +76,26 @@ Report the tag you served.
 Nothing to wrap around the launch: `/opt/venv` is already on `PATH` (no conda
 env), oneAPI vars are baked in (do **not** source `setvars.sh`), the container
 is root with no entrypoint, and the Level Zero UMD is pinned and held
-(compute-runtime `26.27.39122.11`, `torch 2.14.0+xpu` at this tag; each release
-bumps them). Details: `references/image-and-troubleshooting.md`.
+(compute-runtime `26.27.39122.11`, `torch 2.14.0+xpu` at this tag; a release
+can bump them). Details: `references/image-and-troubleshooting.md`.
 
 ## Why each container flag
 
-- `--device /dev/dri -v /dev/dri/by-path:/dev/dri/by-path` — Intel has no
-  `--gpus`; Level Zero finds devices through the `/by-path` symlinks, so both
-  are needed.
-- `--group-add "$RENDER_GID"` — `renderD*` is mode 660, group `render`. Root
-  bypasses it, but keep the flag so the same command survives `--user`.
-  **`--privileged` is not required** (verified on Arc Pro B70).
-- `--network host` — simplest port handling; `-p 30000:30000` also works and
-  sidesteps the TP interface trap below.
-- `--shm-size=16g` / `--ipc=host` — sglang's scheduler needs more shared memory
-  than Docker's default.
-- `-v "$HOME/.cache/huggingface:/root/.cache/huggingface"` — the container is
-  root, so this is the cache path sglang reads.
-
-Full rationale and the optional in-container XPU pre-flight:
+`--device /dev/dri` + the `/by-path` mount: Intel has no `--gpus`; one card is
+found without the mount, but `--tp 2` then fails its first request
+(`onecclCommInitRank failed with code 11`). `--group-add "$RENDER_GID"`: survives
+`--user` (root bypasses it; **`--privileged` is not required**).
+`--network host`: simplest ports (`-p 30000:30000` also works and sidesteps the
+TP trap below). `--shm-size=16g` / `--ipc=host`: the scheduler outgrows Docker's
+default shm. The HF cache mounts at `/root` because the container is root.
+Full rationale and the optional XPU pre-flight:
 `references/image-and-troubleshooting.md`.
 
 ## Quickstart — serve one text-gen model
 
 The container downloads weights itself into the mounted cache — do not install
 `hf` or hunt for a CLI, just launch. Pre-download (`hf download <model>`, only
-if `command -v hf` succeeds; unset a SOCKS `ALL_PROXY` first) only to keep the
+if `command -v hf` succeeds) only to keep the
 download out of the server's startup window.
 
 Launch (single GPU — for multi-GPU see below):
@@ -191,8 +185,8 @@ print('SMOKE TEST PASS')
 "
 ```
 
-Measured (Arc Pro B70, warm cache, Qwen3-0.6B, `v0.5.22-xpu`): ready in ~26 s
-at `--tp 1`, ~27 s at `--tp 2`; raise the 120 s cap for large weights or a cold
+Measured (Arc Pro B70, warm cache, Qwen3-0.6B): ready in ~27 s at `--tp 1`
+and `--tp 2`; raise the 120 s cap for large weights or a cold
 cache. `MODEL` must equal the `id` in `/v1/models` — the value you passed to
 `--model`.
 
@@ -204,7 +198,7 @@ Cleanup: `docker stop sglang-xpu && docker rm sglang-xpu` — if it died, read
 **For `--tp > 1` on one host, add `-e FI_TCP_IFACE=lo`. Unconditionally.**
 Without it oneCCL's TCP fallback can bind an interface the ranks never reach,
 so the server reports *ready* and the **first request never returns**
-(re-tested at `v0.5.22-xpu`). Loopback is always right for ranks on one
+(re-tested on the pinned tag). Loopback is always right for ranks on one
 machine and inert on single GPU. Only exception: `--nnodes > 1` — pin the NIC
 the nodes share instead. If a TP launch still hangs, isolate the collective in
 ~20 s with `scripts/tp_collective_probe.py`; root cause, probe verdicts, and
@@ -267,19 +261,18 @@ Cleanup: `docker stop sglang-xpu-tp && docker rm sglang-xpu-tp`.
 - `--device xpu` — explicit; SGLang doesn't auto-detect XPU as cleanly as vLLM.
 - `--attention-backend intel_xpu` — verified-good SYCL kernel path, and
   **not the default**: without it XPU resolves to `triton` (slower, patchier;
-  2.6× slower at 32 concurrent requests) — which is what the SGLang Cookbook's
-  BMG recipes run, so add the flag to them. Pre-Xe2 devices (no XMX) fall back
-  to `triton` regardless.
-- `--disable-overlap-schedule` — conservative, as in upstream's XPU tests, but
+  2.8× slower at 32 concurrent requests) — which is what most SGLang Cookbook
+  BMG recipes run, so add the flag to them (exceptions: `model-recipes.md`).
+- `--disable-overlap-schedule` — conservative, but
   **not a known-bug fix**: with overlap *on*, 96 concurrent requests all
   returned valid content. Dropping it is a fair A/B.
 - `--page-size 64` — `intel_xpu` accepts `64` and `128`; other values are
   rewritten to `128`, except on the MLA path, which takes `32` verbatim.
   **MLA needs `128`**: at 64 or 32, `flash_mla_decode` asserts on
   `block_num % (128/page_size)` and kills the scheduler at the first decode,
-  after `/v1/models` had answered normally (v0.5.22). **Hybrid Mamba models
-  (Qwen3.5, Nemotron-3-Nano) die at startup on any page size but 1 unless the
-  radix cache is off** — flags and their weak prefix caching: `model-recipes.md`.
+  after `/v1/models` had answered normally. **Hybrid Mamba models
+  (Qwen3.5) die at startup on any page size but 1 unless the radix cache is
+  off** — flags and their weak prefix caching: `model-recipes.md`.
 - `--tp N` — `ZE_AFFINITY_MASK` must expose exactly N XPUs.
 - `--trust-remote-code` — **security opt-in, not in the launch lines above**:
   runs arbitrary Python from the model repo. An `auto_map` in `config.json` is
@@ -290,14 +283,14 @@ Cleanup: `docker stop sglang-xpu-tp && docker rm sglang-xpu-tp`.
 
 ## Quantization: what works, what silently fails
 
-| Quant | Status — content-validated on `v0.5.22-xpu` / Arc Pro B70 against the named checkpoint |
+| Quant | Status — content-validated on Arc Pro B70 against the named checkpoint |
 |---|---|
-| `fp8` | **works** (`Qwen3-0.6B`) — runtime BF16→FP8; KV stays BF16 unless `--kv-cache-dtype fp8_e4m3`. **Every GEMM's trailing dim must be divisible by 16** (XPU uses `torch._scaled_mm`): `gemma-4-26B-A4B-it` (dim 2152) serves `/v1/models`, then kills the scheduler on the first request with `Expected trailing dimension of mat1 to be divisible by 16` |
-| `mxfp4` MoE | **works** (`openai/gpt-oss-20b`) via `sgl-kernel-xpu` W4A16; auto-registered on `--device xpu`, no extra flag. Xe2 / BMG only. Add `--reasoning-parser gpt-oss` or the reasoning channel lands in `content` as raw `<\|channel\|>…` tokens |
+| `fp8` | **works** (`Qwen3-0.6B`) — runtime BF16→FP8 weights; KV stays BF16. **`--kv-cache-dtype fp8_e4m3` kills `intel_xpu` at the first request** (`fp8 KV cache requires k_descale and v_descale`); only `triton` serves it. **Every GEMM's trailing dim must be divisible by 16** (XPU uses `torch._scaled_mm`): `gemma-4-26B-A4B-it` (dim 2152) serves `/v1/models`, then kills the scheduler on the first request with `Expected trailing dimension of mat1 to be divisible by 16` |
+| `mxfp4` MoE | **works** (`openai/gpt-oss-20b`) via `sgl-kernel-xpu` W4A16; auto-registered on `--device xpu`, no extra flag. Add `--reasoning-parser gpt-oss` or the reasoning channel lands in `content` as raw `<\|channel\|>…` tokens |
 | `gptq` | **works** (`Qwen2.5-7B-Instruct-GPTQ-Int4`) |
 | `awq` | **works** — `Qwen2.5-7B-Instruct-AWQ`, `Qwen2.5-VL-7B-Instruct-AWQ` (text and vision). `Qwen2-VL-7B-Instruct-AWQ` answers text but ignores image content — a Qwen2-VL defect that BF16 shares, not AWQ (`references/spec-decode-and-multimodal.md`) |
-| AutoRound | **broken on the asym path** (`kaitchup/Qwen2.5-7B-Instruct-AutoRound-GPTQ-asym-4bit`): HTTP 200 with degenerate repetition (`" Qwen Qwen…"`) at `temperature 0`, still at v0.5.22. Validate any AutoRound checkpoint before trusting it |
-| `compressed-tensors` W4A16 | **works** (`RedHatAI/Qwen2-1.5B-Instruct-quantized.w4a16`) — new on XPU in v0.5.21 via the torch `int4pack` path (PR #40828) |
+| AutoRound | **broken on the asym path** (`kaitchup/Qwen2.5-7B-Instruct-AutoRound-GPTQ-asym-4bit`): HTTP 200 with degenerate repetition (`"Assistant Assistant…"`) at `temperature 0`. Validate any AutoRound checkpoint before trusting it |
+| `compressed-tensors` W4A16 | **works** (`RedHatAI/Qwen2-1.5B-Instruct-quantized.w4a16`) via the torch `int4pack` path |
 | `nvfp4` / `w4a4`, GGUF | **unsupported** — ModelOpt NVFP4 dies at startup (`native dense GEMM backends require SM100+`; `--fp4-gemm-backend marlin` then fails `Torch not compiled with CUDA enabled`); GGUF is CUDA/MUSA/NPU-only → **llamacpp-xpu-run** |
 | compressed-tensors NVFP4, W8A8-Int8 | **unsupported** — refused at startup: `CompressedTensorsW4A16Fp4` / `CompressedTensorsW8A8Int8 is not supported on XPU (no XPU kernel implementation)` |
 | anything not listed | validate `content` before trusting it |
@@ -307,13 +300,14 @@ Never accept HTTP 200 alone — confirm `content` (and `reasoning_content`) is l
 ## Also available: spec-decode, multimodal, opt-in features
 
 `references/spec-decode-and-multimodal.md` holds the verified EAGLE, EAGLE3
-and **NEXTN / MTP** commands (MTP: Qwen3.5-4B, ~1.8× decode, needs the
-hybrid-model flags), LoRA incl. hot-swap, two-batch overlap, MLA / DeepSeek
-(`--page-size 128`), multimodal, and the opt-in features: **XPU graph
-capture**, **memory saver** (two traps that serve `!!!!…` or kill the
-server), **P/D disaggregation**. **Decode context parallelism** (`--dcp-size`,
-new in v0.5.22) is in `references/multi-gpu-tp.md` — read it first, it only
-helps when `tp_size` exceeds the model's KV heads.
+(2.2×), **NEXTN / MTP** (Qwen3.5-4B, hybrid-model flags) and **DSpark**
+(Qwen3-14B, `--tp 2`, 1.7×) commands, LoRA incl. hot-swap, two-batch overlap,
+MLA / DeepSeek (`--page-size 128`), multimodal (Gemma-3 needs
+`--enable-multimodal`), and the opt-in features: **XPU graph capture**,
+**memory saver** (two traps that serve `!!!!…` or kill the server),
+**HiCache** (always pass `--hicache-size`). EP is not supported on BMG.
+**Decode context parallelism** (`--dcp-size`) is in `references/multi-gpu-tp.md`
+— read it first, it only helps when `tp_size` exceeds the model's KV heads.
 
 ## Common errors
 
@@ -341,13 +335,16 @@ helps when `tp_size` exceeds the model's KV heads.
   relaunch under another **literal** name (`--name sglang-xpu-2`); never clear
   a name preemptively either. Your own `Exited` container is the common case:
   read `docker logs sglang-xpu`, then `docker rm` (no `-f`).
+- `/v1/responses` → HTTP 500 (`'State' object has no attribute
+  'openai_serving_responses'`): the image's `openai` SDK is too old for this
+  sglang. Use `/v1/chat/completions` or `/v1/completions`.
 - HTTP 200 with garbage → all-`!!!!` is a memory-saver resume that dropped the
   weights (`spec-decode-and-multimodal.md`); a **short token repeated**
-  (`" Qwen Qwen…"`) is a broken quant path — fall back to BF16. That is why the
+  (`"Assistant Assistant…"`) is a broken quant path — fall back to BF16. That is why the
   verify block tests for repetition, not length.
 
-Less common (`EACCES`, `libsycl` segfault, Triton `CompilationError`,
-`RuntimeError: NCCL`, "Compiling kernel" hang, Docker Hub `429`):
+Less common (`xpu count: 0` under `--user`, `onecclCommInitRank … code 11`,
+`Unsupported head size`, a very slow first request, Docker Hub `429`):
 `references/image-and-troubleshooting.md`.
 
 ## Env vars
@@ -358,9 +355,9 @@ Less common (`EACCES`, `libsycl` segfault, Triton `CompilationError`,
 | `FI_TCP_IFACE=lo` | **Every `--tp > 1` launch on one host.** Pins oneCCL's libfabric transport to loopback; without it the first request can hang forever. Wrong only for `--nnodes > 1`. |
 | `HF_TOKEN` | HF auth for gated models downloaded inside the container. |
 
-Kernel-cache persistence (`TRITON_CACHE_DIR`, `NEO_CACHE_DIR`, …),
-`SYCL_CACHE_PERSISTENT=0`, `SGLANG_SERVER_LAUNCH_TIMEOUT`, debug logging and
-proxy notes: `references/image-and-troubleshooting.md`.
+Kernel-cache persistence (`TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR`;
+Qwen3.5 first request 78 s → 21 s on restart), `HF_HUB_OFFLINE` and the
+spec-decode context override: `references/image-and-troubleshooting.md`.
 
 ## What this skill does NOT cover
 
@@ -371,12 +368,12 @@ proxy notes: `references/image-and-troubleshooting.md`.
 ## References
 
 - `references/spec-decode-and-multimodal.md` — spec-decode + multimodal
-- `references/model-recipes.md` — hybrid-model flags, TP=4/8 recipes, Cookbook
+- `references/model-recipes.md` — hybrid-model flags, SGLang Cookbook BMG recipes
 - `references/multi-gpu-tp.md` — the `--tp > 1` all-reduce hang: fix,
   root cause, py-spy recipe, and what does not fix it
 - `references/image-and-troubleshooting.md` — image contents, XPU pre-flight,
   container-flag rationale, less common errors, full env-var table
-- SGLang XPU docs: <https://docs.sglang.io/docs/hardware-platforms/xpu>
+- SGLang Cookbook (pick **BMG** in a model page's generator): <https://docs.sglang.io/cookbook/intro>
 - Tag list: <https://hub.docker.com/r/lmsysorg/sglang/tags?name=xpu>
 - Image recipe: <https://github.com/sgl-project/sglang/blob/main/docker/xpu.Dockerfile>
 - Intel AutoRound: <https://github.com/intel/auto-round>
