@@ -611,7 +611,6 @@ _SLIDING_LAYER_TYPES = {
     "sliding_attention", "sliding_window_attention", "local_attention",
     "local_sliding_attention", "chunked_attention", "chunked_local_attention",
 }
-_FULL_LAYER_TYPES = {"full_attention", "attention", "global_attention", "full"}
 _FFN_ONLY_LAYER_TYPES = {"mlp", "moe", "feed_forward", "ffn"}
 # Zamba2's `layers_block_type`: a Mamba layer that also calls a shared
 # attention block, so it holds a recurrent state *and* a KV cache.
@@ -1441,7 +1440,6 @@ def _recurrent_block_params(d: ModelDims) -> int:
         x_proj = inner * (rank + 2 * d.state_head_dim_k)
         dt_proj = rank * inner + inner
         scalars = inner * d.state_head_dim_k + inner
-        gate_norm = 0
         return in_proj + conv + out_proj + x_proj + dt_proj + scalars
     return in_proj + conv + out_proj + scalars + gate_norm
 
