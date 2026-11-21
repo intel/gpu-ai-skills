@@ -133,8 +133,12 @@ option (`arc_b` in the page source); the intro page lists no Intel hardware.
 
 Translate by keeping the model, `--tp`, `--mem-fraction-static` and any
 model-specific flags. Add the SKILL.md container flags, `-e FI_TCP_IFACE=lo`
-when `--tp > 1`, and `--attention-backend intel_xpu --page-size 64`, with two
-exceptions measured here:
+when `--tp > 1`, and `--attention-backend intel_xpu --page-size 64`, with these
+exceptions:
+
+- **Gemma-4-26B-A4B**: also add `--chunked-prefill-size -1` with `intel_xpu`.
+  The pinned release's XPU tests disable chunked prefill because the
+  hybrid-attention kernels crash with it enabled.
 
 - **Hybrid models**: with `intel_xpu`, also add `--disable-radix-cache`
   (section above) — or keep the Cookbook's attention default.
