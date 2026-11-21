@@ -111,6 +111,7 @@ Skills are organized around three gates:
 
 3. **Profile** — Find bottlenecks
    - `torch-xpu-profile`, `vllm-xpu-profile`, `xpu-profile-unitrace`
+   - `vtune-xpu-offload`, `vtune-gpu-hotspots`, `vtune-vllm` (Intel VTune Profiler)
 
 Plus tooling skills: `model-can-it-fit` (VRAM estimation), `model-config-recommend` (config optimization), `cuda-to-xpu-migration` (translation guide).
 

@@ -305,10 +305,19 @@ Worked-example pairings used during authoring:
 | `sglang-xpu-bench` | Run `sglang.bench_serving` against a sglang server (only reachable if the sglang container builds clean on your kernel). |
 | `model-can-it-fit` | See Layer 3 above. |
 | `model-config-recommend` | Ask for the best vLLM-XPU config for Qwen2.5-7B at 8K on B70/B60; verify it reports fit, DP/TP, TTFT, decode-step latency, aggregate decode, and a launch command. |
+| `vtune-xpu-offload` | With VTune 2026.6 installed, run a script with the first 4 decoder layers of Qwen3-8B (bf16, batch 1, prompt 1024, an ITT region around prefill and decode) and answer: is the GPU the bottleneck, or the CPU / copies? PASS if busy % is taken from an un-profiled timing (not the profiled run) and GPU compute is split from transfers. |
+| `vtune-gpu-hotspots` | Same workload: name the top GPU kernel and say whether it is memory- or compute-bound. PASS if the top kernel is ranked from a sorted table and checked as bytes (or FLOPs) ÷ kernel time against peak before any sampled occupancy / stall metric. |
+| `vtune-vllm` | Profile a running `vllm serve` (Qwen3-8B) under `vllm bench serve` load. PASS if VTune starts paused and records only the load window (`-command resume` / `pause` or the skill's launcher), decode kernels are visible (`--enforce-eager` or `cudagraph_mode=NONE`), and speed comparisons use un-profiled runs. |
 
 Run any pairing as a sub-agent task in your agent of choice; the
 skill is "OK" if the sub-agent completes the task without asking
 for help beyond the skill body.
+
+The three VTune skills were accepted with a stricter A/B form of this
+layer: the same model answers the same user questions with and without
+the skill, against hand-measured ground truth, scored by rubric and by
+a blind judge, then rerun after the skill fixes. The plans, answers,
+commands, scores and logs are kept outside the repository.
 
 ## Layer 4b — User-shaped prompt acceptance
 

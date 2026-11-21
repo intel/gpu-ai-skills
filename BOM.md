@@ -16,7 +16,7 @@
 |---|---|
 | Origin | Created from scratch by Intel |
 | Outbound Licence | Apache-2.0 |
-| Third-party code vendored | **None** |
+| Third-party code vendored | `vtune-vllm` skill: files from vllm-xpu-profiling-toolkit (Apache-2.0, Copyright 2026 Vasudha, commit `4d93a4d`); see section 2a and `plugins/intel-gpu-ai-skills/skills/vtune-vllm/references/PROVENANCE.md` |
 | Third-party data vendored | **None** |
 | Binaries, archives, submodules | **None** (100% text/source) |
 
@@ -43,6 +43,16 @@ Every item below is an external dependency installed independently by the end us
 | `vllm/vllm-openai-xpu`, `lmsysorg/sglang:<version>-xpu` | Container images | Apache-2.0 | Docker Hub |
 | `llama.cpp` | SYCL backend | MIT | ggml-org/llama.cpp |
 | `unitrace` | Build from source | MIT | intel/pti-gpu |
+| Intel VTune Profiler | 2026.x | Intel End User License Agreement for Developer Tools | Intel oneAPI (apt `intel-oneapi-vtune` or standalone installer) |
+| `ittapi` (Python ITT bindings, optional) | PyPI current | BSD-3-Clause / GPL-2.0 | PyPI (intel/ittapi) |
+
+### 2a. Vendored third-party content
+
+| Component | Version | Licence | Origin | Files | Modified |
+|---|---|---|---|---|---|
+| vllm-xpu-profiling-toolkit (`vtune/`) | commit `4d93a4d0ba5a` (2026-07-09) | Apache-2.0 (Copyright 2026 Vasudha; no upstream NOTICE) | https://github.com/Vasud-ha/vllm-xpu-profiling-toolkit | `vtune-vllm/SKILL.md`, `references/{itt-api,troubleshooting,vllm-integration,validation-and-flow,commands-and-workflow}.md`, `scripts/{run_vtune_vllm.sh,serve_with_vtune.py,vtune_itt.py}` | Yes, recorded in `vtune-vllm/references/PROVENANCE.md` (Apache-2.0 §4(b)) |
+
+**Open item:** licensing / BOM review of this vendored component (added with the VTune skills).
 
 ---
 
@@ -59,4 +69,4 @@ Every item below is an external dependency installed independently by the end us
 * No internal URLs, private endpoints, or unreleased packages are referenced.
 * Repository history contains zero vendored third-party data or cached configurations.
 
-* **Open Items:** **0 (Closed)**
+* **Open Items:** **1** — licensing / BOM review of the vendored vllm-xpu-profiling-toolkit content in `vtune-vllm` (section 2a).
