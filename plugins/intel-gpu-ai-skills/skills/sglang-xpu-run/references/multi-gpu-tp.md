@@ -161,7 +161,7 @@ MPI.
 |---|---|---|---|
 | | `--network host` | unset | **hangs** at first request |
 | | `--network host` | `lo` | serves |
-| | bridge `-p 30099:30099` | unset | serves; readiness and first request match the row above |
+| | bridge `-p 30099:30000` (verify with `PORT=30099`) | unset | serves; readiness and first request match the row above |
 
 Two remedies, either is sufficient: pin `FI_TCP_IFACE=lo`, or use bridge
 networking so the container sees only its own `eth0` and `lo`.
