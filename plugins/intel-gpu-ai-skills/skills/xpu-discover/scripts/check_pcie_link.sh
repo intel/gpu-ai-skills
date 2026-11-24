@@ -61,7 +61,7 @@ for dev in "$sysfs"/*; do
         warned=1
     elif lt "$card" "$slotmax"; then
         case "$(cat "$gpu/device" 2>/dev/null)" in
-            0xe211|0xe223)                                     # Arc Pro B60 / B70: PCIe 5.0 cards
+            0xe211|0xe212|0xe222|0xe223)                       # Arc Pro B60 / B50 / B65 / B70: PCIe 5.0 cards
                 echo "WARN  $bdf  $link; the slot allows $slotmax GT/s but the card port is limited to $card GT/s"
                 warned=1 ;;
             *)

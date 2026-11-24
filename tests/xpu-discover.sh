@@ -56,11 +56,14 @@ $out"
     [ "$rc" = "$2" ] || fail "$1 exited $rc, expected $2"
 }
 
-# 1. Healthy cards, and an Arc Pro B70 whose card port is capped at Gen4 in a Gen5 slot.
+# 1. Healthy cards, and an Arc Pro B70 and an Arc Pro B65 whose card ports are
+#    capped at Gen4 in a Gen5 slot.
 b70 "$tmp/a" 10 32.0 16 32.0 16 32.0 16
 b70 "$tmp/a" 20 32.0 16 16.0 16 16.0 16
+b70 "$tmp/a" 21 32.0 16 16.0 16 16.0 16 0xe222
 expect "$tmp/a" 1 "OK    0000:10:04.0  x16 @ 32.0 GT/s
-WARN  0000:20:04.0  x16 @ 16.0 GT/s; the slot allows 32.0 GT/s but the card port is limited to 16.0 GT/s"
+WARN  0000:20:04.0  x16 @ 16.0 GT/s; the slot allows 32.0 GT/s but the card port is limited to 16.0 GT/s
+WARN  0000:21:04.0  x16 @ 16.0 GT/s; the slot allows 32.0 GT/s but the card port is limited to 16.0 GT/s"
 
 # 2. Link trained below what both ends allow, in speed and in width.
 b70 "$tmp/b" 30 32.0 16 16.0 16 32.0 16
@@ -69,7 +72,7 @@ expect "$tmp/b" 1 "WARN  0000:30:04.0  x16 @ 16.0 GT/s, but card and slot allow 
 WARN  0000:31:04.0  x8 @ 32.0 GT/s, but card and slot allow x16 @ 32.0 GT/s (link trained low)"
 
 # 3. No warning when nothing is wrong: a Gen5 card in a Gen4 slot, and a card
-#    built for Gen4 (not an Arc Pro B60/B70) in a Gen5 slot.
+#    built for Gen4 (an Arc A770, not a PCIe 5.0 Arc Pro card) in a Gen5 slot.
 b70 "$tmp/c" 40 16.0 16 16.0 16 32.0 16
 b70 "$tmp/c" 41 32.0 16 16.0 16 16.0 16 0x56a0
 expect "$tmp/c" 0 "INFO  0000:40:04.0  x16 @ 16.0 GT/s; the slot limits the link (the card allows x16 @ 32.0 GT/s)
@@ -94,8 +97,9 @@ ln -s "$card/0000:64:01.0/0000:65:00.0" "$tmp/d/bus/0000:65:00.0"
 expect "$tmp/d" 0 "OK    0000:51:00.0  x16 @ 32.0 GT/s
 INFO  0000:65:00.0  x16 @ 16.0 GT/s; the slot limits the link (the card allows x16 @ 32.0 GT/s)"
 
-# 5. Skipped: integrated GPU, SR-IOV virtual function, non-Intel GPU, Intel
-#    non-display device. An unreadable link is reported, never guessed.
+# 5. Skipped: integrated GPU, SR-IOV virtual function, non-Intel GPU, an Intel
+#    bridge and an Intel network card in a slot. An unreadable link is
+#    reported, never guessed.
 b70 "$tmp/e" 70 32.0 16 32.0 16 32.0 16
 printf 'Unknown\n' >"$tmp/e/devices/pci0000:70/0000:70:01.0/0000:70:02.0/current_link_speed"
 dev "$tmp/e/devices/pci0000:00/0000:00:02.0" 0x8086 0x7d55 0x030000
@@ -108,6 +112,9 @@ dev "$tmp/e/devices/pci0000:90/0000:90:01.0" 0x8086 0x352a 0x060400 32.0 16 32.0
 dev "$tmp/e/devices/pci0000:90/0000:90:01.0/0000:91:00.0" 0x10de 0x2684 0x030000 32.0 16 32.0 16
 ln -s "$tmp/e/devices/pci0000:90/0000:90:01.0/0000:91:00.0" "$tmp/e/bus/0000:91:00.0"
 ln -s "$tmp/e/devices/pci0000:90/0000:90:01.0" "$tmp/e/bus/0000:90:01.0"
+dev "$tmp/e/devices/pci0000:a0/0000:a0:01.0" 0x8086 0x352a 0x060400 32.0 16 32.0 16
+dev "$tmp/e/devices/pci0000:a0/0000:a0:01.0/0000:a1:00.0" 0x8086 0x1592 0x020000 16.0 16 16.0 16
+ln -s "$tmp/e/devices/pci0000:a0/0000:a0:01.0/0000:a1:00.0" "$tmp/e/bus/0000:a1:00.0"
 expect "$tmp/e" 0 "INFO  0000:70:04.0  PCIe link not readable"
 
 # 6. No discrete Intel GPU at all.

@@ -197,9 +197,9 @@ full power-off.
 
 Possible solutions, for the user to apply:
 
-- **Card port limited below the slot** (Arc Pro B60/B70): usually the card's
-  PCIe Gen4 Downgrade setting; sometimes the card fell back to Gen4 because
-  Gen5 was unstable. `sudo cat /sys/bus/pci/devices/<bdf>/auto_link_downgrade_status`
+- **Card port limited below the slot** (Arc Pro B50, B60, B65 and B70, all
+  PCIe 5.0 cards): usually the card's PCIe Gen4 Downgrade setting; sometimes
+  the card fell back to Gen4 because Gen5 was unstable. `sudo cat /sys/bus/pci/devices/<bdf>/auto_link_downgrade_status`
   tells them apart:
   - `0`, the setting. If `auto_link_downgrade_capable` in the same folder
     reads `1`, run `sudo xpu-smi config -d <id> --pciedowngrade 0` for that
