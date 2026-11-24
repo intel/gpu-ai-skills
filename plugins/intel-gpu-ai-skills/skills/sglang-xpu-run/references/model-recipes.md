@@ -102,6 +102,15 @@ all-reduce hang in `multi-gpu-tp.md` does not depend on the model. Raise the
 verify block's readiness cap for these weight sizes, then run the verify
 block before trusting the server.
 
+**TP=4/8 caveat — the Cookbook and the release's own test disagree:** the
+Cookbook rows above use `--tp 4`, but the pinned release's
+[Llama-3.1-8B XPU test](https://github.com/sgl-project/sglang/blob/v0.5.23/test/registered/xpu/llm_models/test_xpu_llama_3_1_8b.py)
+stays at TP=2 because "TP=4 wedges the Level Zero driver during the first
+prefill batch on Arc/BMG". That is a driver hang, not the transport hang —
+`FI_TCP_IFACE=lo` does not fix it. Run TP=4/8 on cards nobody else is using,
+send one request first, and watch `sudo dmesg` for `GT… reset` lines; if the
+collective probe passes but serving hangs, retry at a lower `--tp`.
+
 **XPU graphs (Qwen3 rows)**: the Cookbook warns that
 `--cuda-graph-backend-decode full --cuda-graph-backend-prefill breakable`
 produce corrupted output on older images and need one built with oneAPI
@@ -142,8 +151,9 @@ exceptions:
 
 - **Hybrid models**: with `intel_xpu`, also add `--disable-radix-cache`
   (section above) — or keep the Cookbook's attention default.
-- **`--kv-cache-dtype fp8_e4m3`** (the Nemotron row): FP8 KV works on `triton`
-  but kills `intel_xpu` at the first request (`fp8 KV cache requires k_descale
+- **`--kv-cache-dtype fp8_e4m3`** (the Nemotron row): FP8 KV serves on `triton`
+  (quality is model-dependent — `image-and-troubleshooting.md`) but kills
+  `intel_xpu` at the first request (`fp8 KV cache requires k_descale
   and v_descale`). Either keep the Cookbook's attention default, or switch the
   KV cache to `bf16` before adding `intel_xpu`.
 
