@@ -36,6 +36,9 @@ profile:
   - torch-xpu-profile
   - vllm-xpu-profile
   - xpu-profile-unitrace
+  - vtune-xpu-offload
+  - vtune-gpu-hotspots
+  - vtune-vllm
 
 monitor:
   - enable-full-system-monitoring

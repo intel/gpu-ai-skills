@@ -8,6 +8,14 @@ See the LICENSE file in the root of this repository for the full license terms.
 
 This distribution contains source code, Agent Skill definitions, helper scripts,and documentation developed for this project.
 
+Third-party content included in this distribution:
+
+- plugins/intel-gpu-ai-skills/skills/vtune-vllm/ contains files from
+  vllm-xpu-profiling-toolkit (https://github.com/Vasud-ha/vllm-xpu-profiling-toolkit,
+  commit 4d93a4d), Copyright 2026 Vasudha, licensed under the Apache License,
+  Version 2.0. Files copied verbatim and files modified by this project are listed
+  in that skill's references/PROVENANCE.md.
+
 The skills may reference third-party software, libraries, tools, models, and container images. These components are not included or redistributed as part of this project and must be obtained separately from their respective upstream sources, subject to their own license terms.
 
 ================================================================================

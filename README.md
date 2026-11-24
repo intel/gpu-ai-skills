@@ -74,6 +74,9 @@ Format follows the [Agent Skills specification](https://agentskills.io/specifica
 | `torch-xpu-profile` | Profile an HF model with `torch.profiler` + Kineto. Export Chrome trace; find hot ops + idle gaps. | "Why is my Qwen2.5 generate() slow on Intel?" |
 | `vllm-xpu-profile` | Profile a running vLLM server via `/start_profile` and `/stop_profile`, or offline `vllm bench --profile`. | "Capture a vLLM-XPU profile around a real-traffic window." |
 | `xpu-profile-unitrace` | SYCL / Level Zero kernel-level profiling with `unitrace` (PTI-GPU; built from source). Per-kernel timing, oneCCL events, HW counters. | "Show me the actual SYCL kernel names taking the time." |
+| `vtune-xpu-offload` | Intel VTune `xpu-offload`: is the time on the host, in CPU-GPU copies, or on the GPU? GPU busy computed against un-profiled timing, per phase. | "Check with VTune whether my GPU, the CPU or data copies are the bottleneck." |
+| `vtune-gpu-hotspots` | Intel VTune `gpu-hotspots`: which kernels take the GPU time and why (stalls, occupancy, bandwidth), checked against peak with bytes ÷ time. | "Use VTune to find which GPU kernels are slow and whether they are memory- or compute-bound." |
+| `vtune-vllm` | Intel VTune on a vLLM server: profile only the load window (start paused, resume/pause), decode kernels with graphs off, VTune in a container. | "Profile my vLLM server with VTune under load, without start-up." |
 | `enable-full-system-monitoring` | Deploy Prometheus + Grafana + XPU Manager monitoring with Docker Compose from [intel/full-system-monitoring](https://github.com/intel/full-system-monitoring). GPU metrics, vLLM inference metrics (ports 8000–8008 by default), system resources. | "Set up monitoring for my Intel GPU host so I can see utilization and vLLM latency." |
 
 ### Migrate — assess AI projects and port PyTorch code
