@@ -25,13 +25,14 @@ xpu-smi ps                        # 4. processes using each GPU
 xpu-smi stats -d 0                # 5. utilisation snapshot
 xpu-smi dump --device 0 --metrics MEMORY,POWER --interval 1
                                   # 6. live CSV stream (Ctrl-C)
+bash scripts/check_pcie_link.sh   # 7. PCIe link of each card (no root)
 ```
 
 The `xpu-smi` commands accept `-j` for JSON output (use when parsing).
 
-Steps 2 and 3 are both needed: `health` covers power and thermals, the kernel
-log covers driver and firmware. Neither certifies health, and a command that
-runs is not a GPU that works.
+Steps 2, 3 and 7 are all needed: `health` covers power and thermals, the
+kernel log covers driver and firmware, and step 7 the PCIe link. None of them
+certifies health, and a command that runs is not a GPU that works.
 
 ## CUDA -> Intel cheat sheet
 
@@ -172,6 +173,45 @@ missing telemetry, not zero.
 
 Matrix of Xe Link / PCIe switch / hostbridge between XPU pairs.
 Only useful on multi-XPU systems.
+
+### `scripts/check_pcie_link.sh` — PCIe link of each card
+
+Needs no root and changes nothing. It checks whether each card's PCIe link
+runs as fast and as wide as the card and its slot allow. On cards with a PCIe
+switch (Arc Pro B-series) the GPU function's own link, `x1 @ 2.5 GT/s`, is
+internal to the card, so the script reads the card's link to the slot.
+
+```text
+OK    0000:18:00.0  x16 @ 32.0 GT/s
+WARN  0000:36:00.0  x16 @ 16.0 GT/s; the slot allows 32.0 GT/s but the card port is limited to 16.0 GT/s
+```
+
+`WARN` (exit status 1) is a performance finding, not a fault: a slower link
+lowers host-to-card and card-to-card copy speed, so workloads that move a lot
+of data over PCIe (offload, multi-card runs) may perform below what the card
+can deliver, and benchmark results from that card may be low. `INFO` needs no
+action. Report each `WARN` with the possible solutions below, and before a
+deployment or a benchmark goes ahead, tell the user and let them decide. Do
+not apply the solutions yourself, even if asked: they need root and usually a
+full power-off.
+
+Possible solutions, for the user to apply:
+
+- **Card port limited below the slot** (Arc Pro B50, B60, B65 and B70, all
+  PCIe 5.0 cards): usually the card's PCIe Gen4 Downgrade setting; sometimes
+  the card fell back to Gen4 because Gen5 was unstable. `sudo cat /sys/bus/pci/devices/<bdf>/auto_link_downgrade_status`
+  tells them apart:
+  - `0`, the setting. If `auto_link_downgrade_capable` in the same folder
+    reads `1`, run `sudo xpu-smi config -d <id> --pciedowngrade 0` for that
+    card only (`<id>` is the Device ID that `xpu-smi discovery` lists for the
+    BDF), power the machine off completely (a reboot does not apply it), and
+    re-run the check. Undo with `--pciedowngrade 1`. If it reads `0`, leave
+    the setting: such a card may not come up on an unstable Gen5 link.
+  - `1`, the link was unstable: treat it as a link trained low.
+- **Link trained low**: re-check while the card is busy (some devices slow
+  the link when idle), then power off, reseat the card, remove risers or
+  extension cables, set the slot's link speed to Auto in the BIOS, or move the
+  card to a full-width slot.
 
 ## Error pattern routing
 

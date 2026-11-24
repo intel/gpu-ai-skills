@@ -198,6 +198,11 @@ if tests/xpu-system-setup.sh; then
 else
     err "tests/xpu-system-setup.sh failed"
 fi
+if tests/xpu-discover.sh; then
+    ok "tests/xpu-discover.sh"
+else
+    err "tests/xpu-discover.sh failed"
+fi
 # secure-config.sh enumerates tracked files via `git ls-files` and refuses to
 # run outside a git worktree (an extracted tree can't distinguish "clean" from
 # "nothing scanned" -- see its own header comment). static.sh already treats a
