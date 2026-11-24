@@ -20,7 +20,7 @@ a short smoke reply never prints one.
 
 | Pair, `--tp 1` unless noted | `accept len` | decode speed-up vs. the same target without spec (512 tokens, warm) |
 |---|---|---|
-| EAGLE3: Llama-3.1-8B-Instruct + `lmsys/sglang-EAGLE3-LLaMA3.1-Instruct-8B` | 2.25–2.85 | **2.2×** |
+| EAGLE3: Llama-3.1-8B-Instruct + `lmsys/sglang-EAGLE3-LLaMA3.1-Instruct-8B` | 2.15–3.85 | **2.1–2.7×** (prompt-dependent) |
 | EAGLE v1: `NousResearch/Llama-2-7b-chat-hf` + `lmsys/sglang-EAGLE-llama2-chat-7B` | 1.75–2.08 | 1.4× |
 | NEXTN: `Qwen/Qwen3.5-4B` (own MTP layer) | 2.5–3.0 | 1.5× |
 | DSpark: `Qwen/Qwen3-14B` + `deepseek-ai/dspark_qwen3_14b_block7`, `--tp 2` | 2.4–3.5 | 1.7× |
@@ -52,6 +52,9 @@ Three ways this launch fails, each reproduced:
 - **No `SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1`** (a `docker run -e`) →
   startup refuses: the draft's config declares a 2048-token context, shorter
   than the target's 131072.
+- `Warning: Target model's context_length (131072) is greater than the
+  derived context_length (2048)` at startup is the expected side effect of
+  that variable, not a fault.
 - **No `--dtype bfloat16`** → the draft checkpoint is fp16; the server reports
   ready, then the scheduler crashes on the first request (`expected mat1 and
   mat2 to have the same dtype … BFloat16 != Half`) and the warmup times out.
@@ -165,10 +168,11 @@ spec-decode only if TPOT improves without TTFT regression.
 - **Validate with a changed input, not a fixed one.** Generate a solid
   square, ask for its colour, swap red for blue, and confirm the answer
   *changes* with the image. A single fixed image can be answered by a lucky
-  guess; two cannot. **Use 448×448 squares, not tiny ones**: on a 64×64 red
-  square Qwen2.5-VL-7B (BF16 and AWQ) answers "pink", "light pink" or
-  "orange" (for both `#FF0000` and `(200,20,20)`) while getting blue right,
-  which looks like a broken vision path; at 448×448 both answer "red".
+  guess; two cannot. **Use 448×448 squares of `(200,20,20)` vs `(20,20,200)`**:
+  on 64×64 red squares Qwen2.5-VL-7B (BF16 and AWQ) answers "pink" or
+  "orange" while getting blue right, and pure `#FF0000` (or `#00FF00`) is
+  "white" even at 448×448 — Transformers on CPU gives the same answer, so it
+  is the model, not XPU. `(200,20,20)` at 448×448 answers "red".
   Qwen3-VL-4B is right at either size.
 - **Qwen2-VL ignores image content** — `Qwen/Qwen2-VL-7B-Instruct` (BF16) and
   its AWQ variant serve text correctly, but give the same colour for every
