@@ -1,7 +1,7 @@
 # Image contents, XPU pre-flight, container flags, less common errors, env vars
 
 Everything here is
-for `lmsysorg/sglang:v0.5.23-xpu` / Arc Pro B70 unless a line says
+verified on `lmsysorg/sglang:v0.5.23-xpu` / Arc Pro B70 unless a line says
 otherwise.
 `$IMG` and `$RENDER_GID` are the values from SKILL.md Steps 0–1.
 
@@ -24,10 +24,13 @@ Nothing needs wrapping around `python3 -m sglang.launch_server`:
   ```sh
   # ^(ii|hi): the image apt-mark-holds these, so dpkg shows "hi", not "ii"
   docker run --rm "$IMG" dpkg -l libze-intel-gpu1 intel-igc-core-2 | grep -E "^(ii|hi)"
-  dpkg -l libze-intel-gpu1 | grep -E "^(ii|hi)"     # host, for comparison
+  uname -r                                          # host kernel = the xe KMD
   ```
 
-  If the host `xe` KMD is older than the UMD the image pins, `zeInit` fails
+  The host's own UMD package does not matter — the container brings its own
+  (verified: host `libze-intel-gpu1 26.05` with this image's `26.27` serves
+  fine on kernel `6.17`). If the host `xe` KMD is older than the UMD the image
+  pins, `zeInit` fails
   (`xpu count: 0`, `ZE_RESULT_ERROR_UNINITIALIZED`). Fix by upgrading the host
   stack (**xpu-system-setup**) or serve with **vllm-xpu-run**; meanwhile pin
   `IMG=lmsysorg/sglang:<last-working-tag>`.
@@ -74,7 +77,9 @@ mounted. Expected on the verified host: `xpu count: 1`,
 - `--network host` — simplifies port handling (sglang uses 30000 + internal RPC
   ports). Swapping it for `-p 30000:30000` also sidesteps the multi-GPU
   interface trap (`multi-gpu-tp.md`); bridge mode was verified unaffected.
-- `--shm-size=16g` / `--ipc=host` — every run in this skill used both.
+- `--shm-size=16g` / `--ipc=host` — every run in this skill used both. Not
+  required for text serving: Qwen3-0.6B at `--tp 1` and `--tp 2` served 32
+  concurrent requests with neither (Docker's 64 MB default shm).
 - `-v "$HOME/.cache/huggingface:/root/.cache/huggingface"` — reuse the host Hub
   cache. The container is root, so `/root/.cache/huggingface` is the path
   sglang reads.
@@ -108,10 +113,33 @@ conflict, HTTP 200 with garbage) are in SKILL.md.
   The image ships `openai 2.6.1` (`python/pyproject_xpu.toml`) while this
   sglang's Responses code needs `2.8.0` (main `pyproject.toml`). Use
   `/v1/chat/completions` or `/v1/completions`.
+- `ModuleNotFoundError: No module named 'tvm_ffi'` at startup → the
+  container sees no XPU. Reproduced with no `--device /dev/dri` and with
+  `ZE_AFFINITY_MASK=7` on a 2-card host, with or without `--device xpu`:
+  SGLang then imports its CUDA communication path. There is no CPU fallback.
 - `RuntimeError: Unsupported head size for paged prefill attention: 80` on the
   first request (e.g. `microsoft/phi-2`) → the `intel_xpu` paged kernels do not
   cover that head size. Serve with `--attention-backend triton` (phi-2 then
   answers correctly via `/v1/completions`; it has no chat template).
+
+## FP8 KV cache (`--kv-cache-dtype fp8_e4m3`): per-model results
+
+`intel_xpu` refuses it at the first request (`fp8 KV cache requires k_descale
+and v_descale`). `triton` serves it with unit scales (`Using FP8 KV cache but
+no scaling factors provided`) and doubles the KV pool, but quality depends on
+the model. `--attention-backend triton --kv-cache-dtype fp8_e4m3`, `temperature
+0`, compared with the same model on BF16 KV:
+
+| Model | Output |
+|---|---|
+| Llama-3.1-8B-Instruct, Mistral-7B-Instruct-v0.3, Qwen3-0.6B, Qwen3-8B | clean |
+| Qwen2.5-7B-Instruct | **corrupt**: `"Paris..\n\nTwo other European capitals are счет Europe, capitals are счет areSCORE"` — the verify block still prints PASS. `fp8_e5m2` too |
+| Qwen2.5-1.5B-Instruct | degraded: stutter (`"body of of water"`) and wrong facts BF16 gets right |
+
+Calibrated per-layer scales via `--quantization-param-path` do not rescue
+Qwen2.5: the server logs `Loaded KV cache scaling factors`, then the first
+request returns HTTP 500 (`AttributeError: 'NoneType' object has no attribute
+'type'`) while the container stays `Up`. Use BF16 KV for Qwen2.5.
 
 ## Env vars, full table
 
