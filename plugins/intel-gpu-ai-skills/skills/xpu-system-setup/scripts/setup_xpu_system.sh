@@ -169,6 +169,9 @@ is_omix_repo_configured() {
     fi
 
     if [[ "${#deb822_files[@]}" -gt 0 ]]; then
+        # Output goes to /dev/null: this awk prints nothing, and when its output is
+        # a terminal, newer mawk (the default awk on Ubuntu 26.04) reads one line
+        # per record and ignores RS = "", so no deb822 entry would ever match.
         awk -v codename="$DISTRO_CODENAME" '
             BEGIN {
                 RS = ""
@@ -187,7 +190,7 @@ is_omix_repo_configured() {
             END {
                 exit !found
             }
-        ' "${deb822_files[@]}" 2>/dev/null && return 0
+        ' "${deb822_files[@]}" >/dev/null 2>&1 && return 0
     fi
 
     return 1
