@@ -65,6 +65,8 @@ repo_is_configured_from_text() {
         return 0
     fi
 
+    # Output goes to /dev/null, as in setup_xpu_system.sh: when it is a terminal,
+    # newer mawk (Ubuntu 26.04) reads one line per record and ignores RS = "".
     awk -v codename="$codename" '
         BEGIN {
             RS = ""
@@ -83,7 +85,7 @@ repo_is_configured_from_text() {
         END {
             exit !found
         }
-    ' "$path"
+    ' "$path" >/dev/null
 }
 
 assert_counts() {
