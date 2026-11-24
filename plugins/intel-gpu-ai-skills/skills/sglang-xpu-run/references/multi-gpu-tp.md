@@ -1,9 +1,12 @@
 # Multi-GPU (TP) on XPU: the all-reduce hang and its fix
 
+Everything here is measured on `v0.5.23-xpu` / 2× Arc Pro B70.
+
 ## Symptom
 
 `--tp 2` starts normally: weights load, KV cache allocates on both cards,
-`Application startup complete`, `/v1/models` answers in ~28 s. The **first
+`Application startup complete`, `/v1/models` answers as fast as on a healthy
+server. The **first
 inference request then never returns** — no HTTP error, no crash, no
 watchdog. The server stays up indefinitely.
 
@@ -18,10 +21,8 @@ verified host:
 
 | Concern | Finding |
 |---|---|
-| Throughput cost vs. a working real NIC | none: TP=2, 8x64 tokens — `lo` 1524 ms/req, `eno3np0` 1655 ms/req (loopback skips the NIC) |
+| Throughput cost vs. a working real NIC | none: TP=2, 8 concurrent × 64 tokens — `eno3np0` took ~15% longer than `lo` (loopback skips the NIC) |
 | Single-GPU launches | inert — no collectives run |
-| An image whose `shm` provider works | inert — oneCCL prefers shm; the variable only steers libfabric's `tcp` provider |
-| RDMA / `verbs` provider | inert — different provider, variable ignored |
 | **`--nnodes > 1`** | **breaks it** — ranks on other hosts are unreachable over loopback. Pin the NIC the nodes share instead. |
 
 So the only hazard is multi-node, which this skill does not cover; it is
@@ -31,7 +32,7 @@ called out explicitly in the Multi-GPU section.
 
 If a TP launch hangs even with `FI_TCP_IFACE=lo` set, take the model out of
 the picture. `scripts/tp_collective_probe.py` does one 2-rank XPU all-reduce
-and bounds itself (20 s default), so run it in the foreground inside the
+and bounds itself, so run it in the foreground inside the
 serving image with the same network mode, `ZE_AFFINITY_MASK`, and env vars
 as the launch:
 
@@ -57,30 +58,30 @@ docker run --rm --ipc=host --shm-size=2g --network host \
 | `NOT ENOUGH XPUS` (2) | `ZE_AFFINITY_MASK` exposes fewer XPUs than `--world-size`. |
 | traceback (1) | A different problem entirely. |
 
-Measured probe verdicts on the verified host (re-checked at v0.5.22):
+Measured probe verdicts on the verified host:
 
 | Probe configuration | Verdict |
 |---|---|
-| bridge networking, no env var | `COLLECTIVE OK` in 5 s |
+| bridge networking, no env var | `COLLECTIVE OK` |
 | `--network host`, no env var | `COLLECTIVE HUNG` (log ends at the `CCL_WARN` lines) |
-| `--network host`, `FI_TCP_IFACE=lo` | `COLLECTIVE OK` in 6 s |
+| `--network host`, `FI_TCP_IFACE=lo` | `COLLECTIVE OK` |
 
 Serving results with and without the pin, measured on 2× Arc Pro B70,
 Qwen3-0.6B:
 
-| | ready | first request | warm request |
-|---|---|---|---|
-| `--tp 2`, no `FI_TCP_IFACE` | ~27 s | **never returns** (hung >120 s) | — |
-| `--tp 2`, `FI_TCP_IFACE=lo` | ~27 s | ~5 s | under 1 s |
+| | ready | first request |
+|---|---|---|
+| `--tp 2`, no `FI_TCP_IFACE` | same as with the pin | **never returns** (still hung when the client timed out) |
+| `--tp 2`, `FI_TCP_IFACE=lo` | same as `--tp 1` | returns; several times slower than warm requests (one-time compilation) |
 
-**The hang has survived every release bump so far** (re-tested at v0.5.21 and
-v0.5.22; `fi_info -p shm` is still empty in the v0.5.22 image), so do not
-treat a newer tag as a reason to drop the variable. The no-pin run reaches `/v1/models` and
+**The hang is still present on the pinned tag** (`fi_info -p shm` is still
+empty in this image), so do not treat a newer tag as a reason to drop the
+variable. The no-pin run reaches `/v1/models` and
 then sits on the first request until the client's own timeout — exactly the
 documented signature.
 
-After the fix both cards hold comparable memory (~27 GB each for this
-model+KV) and `Prefill batch` / `Decode batch` lines appear in the log.
+After the fix both cards hold comparable memory (~26–27 GB each for this
+model+KV, also with 32 concurrent requests) and `Prefill batch` / `Decode batch` lines appear in the log.
 
 ## When a TP smoke request times out
 
@@ -92,12 +93,11 @@ order:
    `FI_TCP_IFACE=lo`. A missing variable means the launch line was edited.
 2. Run the probe (above) with the same network mode and mask. `COLLECTIVE
    HUNG` is this transport problem; `COLLECTIVE OK` means the hang is
-   elsewhere — take the py-spy dump below, then retry at a lower `--tp`
-   (upstream records engine-side Level Zero hangs on some Arc/B-series hosts;
-   see Notes).
-3. Healthy numbers to compare against (Qwen3-0.6B, 2× B70): ready ~27 s,
-   first request ~5–6 s, under 1 s warm, and comparable memory on both cards
-   in `xpu-smi dump -m 18`. Garbage `content` with a fast response is a
+   elsewhere — take the py-spy dump below, then retry at a lower `--tp`.
+3. Healthy signs to compare against (Qwen3-0.6B, 2× B70): `--tp 2` becomes
+   ready about as fast as `--tp 1`, the first request is several times slower
+   than warm ones but returns, and both cards show comparable memory in
+   `xpu-smi dump -m 18`. Garbage `content` with a fast response is a
    `--tp` / `ZE_AFFINITY_MASK` mismatch rather than quantization.
 
 ## Root cause: host topology + a missing shared-memory provider
@@ -133,48 +133,35 @@ never completes over it, so the collective blocks forever.
 
 ### Which interfaces work
 
-Same launch, only `FI_TCP_IFACE` changed, on a host offering `lo`,
-`enx…`(169.254/16 link-local), `eno3np0`(192.168.11.2), `br-…`(172.18.0.1)
-and `docker0`(172.17.0.1):
+Only `FI_TCP_IFACE` changed, on a host offering `lo`, `enx…` (no IPv4),
+`eno3np0` (192.168.11.2), `br-…` (172.18.0.1) and `docker0` (172.17.0.1).
+Probe = `scripts/tp_collective_probe.py` under `--network host`:
 
-| `FI_TCP_IFACE` | First request |
+| `FI_TCP_IFACE` | Result |
 |---|---|
-| unset → libfabric picks `br-…` | **hangs** |
-| `docker0` | **hangs** |
-| `eno3np0` (routable NIC) | 6 s ✅ |
-| `lo` | 6 s ✅ |
+| unset → libfabric picks `br-…` | probe **HUNG**; server's first request hangs |
+| `br-61d8f070a03c` | probe **HUNG** |
+| `docker0` | probe fails fast: `onecclCommInitRank failed with code 11` |
+| `eno3np0` (routable NIC) | probe OK; server serves (8 × 64 tokens ~15% slower than `lo`) ✅ |
+| `lo` | probe OK; server serves ✅ |
 
 So loopback is not magic — a real routable NIC works too. The failures are
 the bridge-type interfaces libfabric happens to rank first. `lo` is the
 recommended pin because it is always present, always correct for ranks on
 one host, and needs no knowledge of the host's NIC names.
 
-**Attribution:** the *host* supplies the confusing interface list (a
-single-NIC machine would likely have worked by default), while the *image*
-supplies the missing `shm` provider that forces TCP in the first place and
-pins no `FI_*` defaults. sglang contributes only by spawning ranks without
-MPI. Expect the same class of failure on any multi-bridge container host.
+**Attribution:** the *host* supplies the confusing interface list, while the
+*image* supplies the missing `shm` provider that forces TCP in the first place
+and pins no `FI_*` defaults. sglang contributes only by spawning ranks without
+MPI.
 
-## Not sglang-specific: vLLM-XPU behaves identically
+## Bridge networking also avoids it
 
-Both stacks reach the same oneCCL OFI transport, so both break under
-`--network host` on this host. vLLM only *appears* immune because its
-published recipe uses bridge networking (`-p 8000:8000`).
-
-| Stack | Network mode | `FI_TCP_IFACE` | Result |
+| `--tp 2`, Qwen3-0.6B | Network mode | `FI_TCP_IFACE` | Result |
 |---|---|---|---|
-| sglang `--tp 2` | `--network host` | unset | **hangs** at first request |
-| sglang `--tp 2` | `--network host` | `lo` | ready 28 s, request 6 s |
-| sglang `--tp 2` | bridge `-p 30099:30000` | unset | ready 28 s, request 6 s |
-| vLLM `--tensor-parallel-size 2` | bridge `-p 8000:8000` | unset | ready 142 s, request 1 s |
-| vLLM `--tensor-parallel-size 2` | `--network host` | unset | **hangs before ready** |
-| vLLM `--tensor-parallel-size 2` | `--network host` | `lo` | ready 137 s, request 0 s |
-
-vLLM hangs *earlier* than sglang — it runs its collectives during engine
-init, so the server never reaches `Application startup complete`, whereas
-sglang becomes ready and then stalls on the first forward pass. Same cause,
-different symptom. vLLM's log stops at `|CCL_WARN| value of
-CCL_ATL_TRANSPORT changed to be ofi`.
+| | `--network host` | unset | **hangs** at first request |
+| | `--network host` | `lo` | serves |
+| | bridge `-p 30099:30000` (verify with `PORT=30099`) | unset | serves; readiness and first request match the row above |
 
 Two remedies, either is sufficient: pin `FI_TCP_IFACE=lo`, or use bridge
 networking so the container sees only its own `eth0` and `lo`.
@@ -183,7 +170,7 @@ networking so the container sees only its own `eth0` and `lo`.
 
 ```sh
 docker exec <container> pip install -q py-spy
-docker exec <container> sh -c 'py-spy dump --pid $(pgrep -f scheduler_TP0)'
+docker exec <container> sh -c 'py-spy dump --pid $(pgrep -f scheduler_TP0 | head -1)'
 ```
 
 A hung TP rank shows this stack — the first collective of the forward
@@ -192,9 +179,10 @@ pass, in the vocab-parallel embedding:
 ```
 all_reduce (torch/distributed/distributed_c10d.py)
 _all_reduce_in_place (distributed/parallel_state.py)
-tensor_model_parallel_all_reduce (distributed/communication_op.py)
+all_reduce (distributed/parallel_state.py)
 forward (vocab_parallel_embedding.py)
-forward (qwen3.py) -> _execute_extend -> run_batch -> event_loop_normal
+forward (qwen3.py) -> _execute_extend (runner/eager_runner.py)
+  -> forward_batch_generation (tp_worker.py) -> event_loop_normal (scheduler.py)
 ```
 
 Both ranks show the same frame: they arrive at the collective and neither
@@ -205,30 +193,29 @@ are not evidence of compilation.
 
 ## What does *not* fix it
 
-All tested on the verified host; each still hung with no first response:
+All under `--network host` with no `FI_TCP_IFACE`. Server rows ran
+Qwen3-0.6B `--tp 2`; env-var rows ran the collective probe. None works:
 
 | Tried | Result |
 |---|---|
-| `--attention-backend triton` instead of `intel_xpu` | hangs |
-| default flags (no `--disable-overlap-schedule`, default page size) | hangs |
-| `--privileged` + `-v /dev/shm:/dev/shm` + `--user root` + `--group-add video` (the shape in upstream's XPU docs) | hangs |
-| `CCL_ZE_ENABLE=0` | hangs |
-| `CCL_ZE_IPC_EXCHANGE=sockets` | hangs |
-| `CCL_ZE_IPC_EXCHANGE=drmfd` | hangs |
-| `FI_PROVIDER=shm` | hangs |
-| `FI_PROVIDER=tcp` *without* `FI_TCP_IFACE` | hangs |
-| `CCL_ATL_TRANSPORT=ofi` + `FI_PROVIDER=tcp` (no iface pin) | hangs |
+| `--attention-backend triton` instead of `intel_xpu` (server) | first request hangs |
+| default flags: no `--disable-overlap-schedule`, default page size (server) | first request hangs |
+| `--privileged` + `-v /dev/shm:/dev/shm` + `--user root` + `--group-add video` (a common XPU container shape) | probe HUNG |
+| `CCL_ZE_IPC_EXCHANGE=sockets` / `=drmfd` | probe HUNG |
+| `FI_PROVIDER=tcp` *without* `FI_TCP_IFACE` | probe HUNG |
+| `CCL_ATL_TRANSPORT=ofi` + `FI_PROVIDER=tcp` (no iface pin) | probe HUNG |
+| `CCL_ZE_ENABLE=0` | probe fails fast: `onecclCommInitRank failed with code 11` |
+| `FI_PROVIDER=shm` | probe fails fast: same `code 11` (the image has no `shm` provider) |
 
 `FI_TCP_IFACE=lo` alone is sufficient. The two cards being on separate
 PCIe root complexes (no P2P) is *not* the cause — a host-staged transport
 would have worked; the transport simply never connected.
 
-## Decode context parallelism (`--dcp-size`, new in v0.5.22)
+## Decode context parallelism (`--dcp-size`)
 
 DCP shards the KV cache across the ranks of a TP group by token position and
-merges partial attention by log-sum-exp. Upstream marks it experimental on
-XPU; it needs `intel_xpu` attention. Verified on 2× Arc Pro B70 with
-upstream's own example:
+merges partial attention by log-sum-exp. Verified on 2× Arc Pro B70 with
+`intel_xpu` attention:
 
 ```sh
 python3 -m sglang.launch_server --model Qwen/Qwen3.5-4B --device xpu \
@@ -237,41 +224,17 @@ python3 -m sglang.launch_server --model Qwen/Qwen3.5-4B --device xpu \
     --host 0.0.0.0 --port 30000      # docker run ... -e FI_TCP_IFACE=lo
 ```
 
-| `--tp 2`, Qwen3.5-4B | max total tokens | 256-token decode, warm |
+| `--tp 2`, Qwen3.5-4B | max total tokens | 256-token decode time, warm (relative) |
 |---|---|---|
-| without `--dcp-size` | 507,008 | 10.0 s |
-| `--dcp-size 2` (`a2a` comm, the XPU default) | 504,832 | 11.0 s |
+| without `--dcp-size` | 507,008 | 1.00× |
+| `--dcp-size 2` (`a2a` comm, the XPU default) | 504,832 | 1.12× |
+| `--dcp-size 2` + `--linear-attn-backend intel_xpu` | 504,832 | 1.04× |
 
-Output is correct, but on two cards **DCP bought no capacity and cost ~10%
-decode time**: it only grows the servable context when `tp_size` exceeds the
+Output is correct in all three, but on two cards **DCP bought no capacity
+and cost ~5–12% decode time**: it only grows the servable context when `tp_size` exceeds the
 model's KV-head count (otherwise TP already splits the KV heads), which on a
-2-card host means 1-KV-head models. The ~70 s first request is not DCP (same
+2-card host means 1-KV-head models. The slow first request is not DCP (same
 without it): it is the Triton JIT for Qwen3.5's linear-attention layers.
-`--linear-attn-backend intel_xpu` cut it to 6–20 s at TP=1
-(`model-recipes.md`); that flag was not re-tested with DCP. If startup fails with
+`--linear-attn-backend intel_xpu` makes it ~7× faster with DCP too (third row).
+If startup fails with
 `UR_RESULT_ERROR_OUT_OF_RESOURCES`, lower `--mem-fraction-static`.
-
-## Notes
-
-- Upstream's XPU CI does cover TP, nightly only: Llama-3.1-8B at TP=2 and
-  four MoE models (Gemma-4-26B-A4B, Nemotron-3-Nano-30B-A3B, Qwen3-30B-A3B,
-  Qwen3.5-35B-A3B) at TP=4. Expect to re-verify after an image bump.
-- Upstream's test code records two Level Zero hangs on some Arc/B-series
-  hosts that are *not* this transport problem (the probe says
-  `COLLECTIVE OK`):
-  - Llama-3.1-8B at TP=4 "wedges the Level Zero driver during the first
-    prefill batch", which is why that test runs TP=2
-    (`test/registered/xpu/llm_models/test_xpu_llama_3_1_8b.py`).
-  - "intel_xpu attention at TP>=2 wedges the Level Zero driver on
-    concurrent prefill", which is why the nightly accuracy tests send one
-    request at a time by default
-    (`python/sglang/test/xpu/simple_eval_gsm8k_xpu_mixin.py`).
-
-  Neither reproduced on the verified host (2× Arc Pro B70, TP=2, 32
-  concurrent requests). If a TP launch hangs with `FI_TCP_IFACE=lo` set and
-  the probe passes, retry at a lower `--tp`.
-- On a single-NIC host the default interface choice may happen to work.
-  Setting `FI_TCP_IFACE=lo` anyway costs nothing and removes the variable.
-- The same class of failure is why upstream's P/D disaggregation docs set
-  `UCX_POSIX_USE_PROC_LINK=n`: intra-node transports picking the wrong
-  mechanism inside containers.
